@@ -1,0 +1,10 @@
+dataset/
+venv/
+venv312/
+.venv/
+runs/
+ai/outputs/
+**/__pycache__/
+*.pyc
+.vscode/
+yolov8n.pt
