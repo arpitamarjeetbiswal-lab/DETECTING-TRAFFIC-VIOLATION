@@ -1,353 +1,463 @@
 import {
+  ResponsiveContainer,
   LineChart,
   Line,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
+  PieChart,
+  Pie,
+  Cell,
   Legend,
 } from "recharts";
 
-const violationTrend = [
-  { day: "Mon", violations: 22 },
-  { day: "Tue", violations: 31 },
-  { day: "Wed", violations: 26 },
-  { day: "Thu", violations: 38 },
-  { day: "Fri", violations: 34 },
-  { day: "Sat", violations: 42 },
-  { day: "Sun", violations: 35 },
-];
-
-const vehicleData = [
-  { day: "Mon", vehicles: 1120 },
-  { day: "Tue", vehicles: 1280 },
-  { day: "Wed", vehicles: 1190 },
-  { day: "Thu", vehicles: 1430 },
-  { day: "Fri", vehicles: 1370 },
-  { day: "Sat", vehicles: 1580 },
-  { day: "Sun", vehicles: 1420 },
-];
-
-const violationDistribution = [
-  { name: "No Helmet", value: 74 },
-  { name: "Overspeed", value: 42 },
-  { name: "Triple Riding", value: 38 },
-  { name: "Other", value: 32 },
-];
-
-const confidenceData = [
-  { day: "Mon", confidence: 91 },
-  { day: "Tue", confidence: 93 },
-  { day: "Wed", confidence: 92 },
-  { day: "Thu", confidence: 95 },
-  { day: "Fri", confidence: 94 },
-  { day: "Sat", confidence: 96 },
-  { day: "Sun", confidence: 95 },
-];
-
-const trafficHours = [
-  { hour: "8 AM", vehicles: 420 },
-  { hour: "9 AM", vehicles: 680 },
-  { hour: "10 AM", vehicles: 540 },
-  { hour: "12 PM", vehicles: 390 },
-  { hour: "2 PM", vehicles: 470 },
-  { hour: "5 PM", vehicles: 720 },
-  { hour: "6 PM", vehicles: 810 },
-  { hour: "7 PM", vehicles: 650 },
-];
-
-const chartTooltip = {
-  background: "#111827",
-  border: "1px solid #334155",
-  borderRadius: "8px",
-  color: "#fff",
-};
-
 function Analytics() {
+  const violationTrend = [
+    { day: "Mon", violations: 22 },
+    { day: "Tue", violations: 31 },
+    { day: "Wed", violations: 26 },
+    { day: "Thu", violations: 38 },
+    { day: "Fri", violations: 34 },
+    { day: "Sat", violations: 42 },
+    { day: "Sun", violations: 35 },
+  ];
+
+  const vehicleData = [
+    { day: "Mon", vehicles: 1120 },
+    { day: "Tue", vehicles: 1280 },
+    { day: "Wed", vehicles: 1190 },
+    { day: "Thu", vehicles: 1430 },
+    { day: "Fri", vehicles: 1370 },
+    { day: "Sat", vehicles: 1580 },
+    { day: "Sun", vehicles: 1420 },
+  ];
+
+  const violationDistribution = [
+    { name: "No Helmet", value: 74 },
+    { name: "Overspeed", value: 42 },
+    { name: "Triple Riding", value: 38 },
+    { name: "Other", value: 32 },
+  ];
+
+  const confidenceData = [
+    { day: "Mon", confidence: 91 },
+    { day: "Tue", confidence: 93 },
+    { day: "Wed", confidence: 92 },
+    { day: "Thu", confidence: 95 },
+    { day: "Fri", confidence: 94 },
+    { day: "Sat", confidence: 96 },
+    { day: "Sun", confidence: 95 },
+  ];
+
+  const trafficHours = [
+    { time: "8 AM", vehicles: 420 },
+    { time: "9 AM", vehicles: 680 },
+    { time: "10 AM", vehicles: 540 },
+    { time: "12 PM", vehicles: 390 },
+    { time: "2 PM", vehicles: 470 },
+    { time: "5 PM", vehicles: 720 },
+    { time: "6 PM", vehicles: 810 },
+    { time: "7 PM", vehicles: 650 },
+  ];
+
   return (
     <div className="page-content analytics-page">
 
       {/* HEADER */}
-      <div className="page-header">
+      <div className="page-header analytics-header">
         <div>
-          <span className="page-label">DATA VISUALIZATION</span>
+          <span className="page-label">TRAFFIC INSIGHTS</span>
 
           <h1>Analytics</h1>
 
           <p>
-            Visual analysis of traffic and AI detection data.
+            Analyze traffic activity, violations and AI detection
+            performance.
           </p>
         </div>
 
-        <select className="analytics-period" defaultValue="7">
-          <option value="7">Last 7 Days</option>
-          <option value="30">Last 30 Days</option>
-          <option value="90">Last 90 Days</option>
+        <select className="analytics-period">
+          <option>Last 7 Days</option>
+          <option>Last 30 Days</option>
+          <option>Last 90 Days</option>
         </select>
       </div>
 
-      {/* VIOLATION TREND */}
-      <section className="panel analytics-large-chart">
+      {/* SUMMARY */}
+      <div className="analytics-summary">
 
-        <div className="panel-header">
-          <div>
-            <h3>Violation Trend</h3>
-            <p>Traffic violations detected each day</p>
-          </div>
+        <div className="analytics-summary-card">
+          <span>Total Vehicles</span>
+          <strong>9,390</strong>
+          <small>Processed this week</small>
         </div>
 
-        <div className="analytics-chart">
-          <LineChart
-            width={900}
-            height={320}
-            data={violationTrend}
-            margin={{
-              top: 15,
-              right: 20,
-              left: 0,
-              bottom: 5,
-            }}
-          >
-            <CartesianGrid
-              stroke="#1f2937"
-              strokeDasharray="3 3"
-              vertical={false}
-            />
-
-            <XAxis
-              dataKey="day"
-              stroke="#64748b"
-              tickLine={false}
-              axisLine={false}
-            />
-
-            <YAxis
-              stroke="#64748b"
-              tickLine={false}
-              axisLine={false}
-            />
-
-            <Tooltip contentStyle={chartTooltip} />
-
-            <Line
-              type="monotone"
-              dataKey="violations"
-              stroke="#3b82f6"
-              strokeWidth={3}
-              dot={{ r: 4 }}
-              activeDot={{ r: 6 }}
-            />
-          </LineChart>
+        <div className="analytics-summary-card">
+          <span>Total Violations</span>
+          <strong>132</strong>
+          <small>Detected by AI</small>
         </div>
-      </section>
 
-      {/* VEHICLES + DISTRIBUTION */}
-      <section className="analytics-chart-grid">
+        <div className="analytics-summary-card">
+          <span>Detection Confidence</span>
+          <strong>94%</strong>
+          <small>Average AI confidence</small>
+        </div>
 
-        {/* DAILY VEHICLES */}
-        <div className="panel analytics-chart-panel">
+        <div className="analytics-summary-card">
+          <span>Peak Traffic</span>
+          <strong>6 PM</strong>
+          <small>810 vehicles detected</small>
+        </div>
 
-          <div className="panel-header">
+      </div>
+
+      {/* FIRST FOUR CHARTS */}
+      <div className="analytics-chart-grid">
+
+        {/* DAILY VIOLATIONS */}
+        <div className="analytics-panel">
+
+          <div className="analytics-panel-header">
             <div>
-              <h3>Daily Vehicle Count</h3>
-              <p>Vehicles processed by AI</p>
+              <span className="page-label">VIOLATION TREND</span>
+              <h3>Daily Violations</h3>
             </div>
+
+            <span className="analytics-badge">
+              7 DAYS
+            </span>
           </div>
 
           <div className="analytics-chart">
-            <BarChart
-              width={500}
-              height={280}
-              data={vehicleData}
-              margin={{
-                top: 15,
-                right: 10,
-                left: 0,
-                bottom: 5,
-              }}
-            >
-              <CartesianGrid
-                stroke="#1f2937"
-                strokeDasharray="3 3"
-                vertical={false}
-              />
 
-              <XAxis
-                dataKey="day"
-                stroke="#64748b"
-                tickLine={false}
-                axisLine={false}
-              />
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={violationTrend}
+                margin={{
+                  top: 10,
+                  right: 20,
+                  left: 0,
+                  bottom: 10,
+                }}
+              >
+                <CartesianGrid
+                  stroke="#263449"
+                  strokeDasharray="3 3"
+                />
 
-              <YAxis
-                stroke="#64748b"
-                tickLine={false}
-                axisLine={false}
-              />
+                <XAxis
+                  dataKey="day"
+                  stroke="#94a3b8"
+                  tick={{ fontSize: 11 }}
+                />
 
-              <Tooltip contentStyle={chartTooltip} />
+                <YAxis
+                  stroke="#94a3b8"
+                  tick={{ fontSize: 11 }}
+                />
 
-              <Bar
-                dataKey="vehicles"
-                fill="#3b82f6"
-                radius={[5, 5, 0, 0]}
-              />
-            </BarChart>
+                <Tooltip
+                  contentStyle={{
+                    background: "#111827",
+                    border: "1px solid #263449",
+                    borderRadius: "8px",
+                    color: "#ffffff",
+                  }}
+                />
+
+                <Line
+                  type="monotone"
+                  dataKey="violations"
+                  stroke="#60a5fa"
+                  strokeWidth={3}
+                  dot={{
+                    r: 4,
+                    fill: "#60a5fa",
+                  }}
+                  activeDot={{
+                    r: 6,
+                  }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+
+          </div>
+        </div>
+
+        {/* VEHICLES PROCESSED */}
+        <div className="analytics-panel">
+
+          <div className="analytics-panel-header">
+            <div>
+              <span className="page-label">TRAFFIC VOLUME</span>
+              <h3>Vehicles Processed</h3>
+            </div>
+
+            <span className="analytics-badge">
+              7 DAYS
+            </span>
+          </div>
+
+          <div className="analytics-chart">
+
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={vehicleData}
+                margin={{
+                  top: 10,
+                  right: 20,
+                  left: 0,
+                  bottom: 10,
+                }}
+              >
+                <CartesianGrid
+                  stroke="#263449"
+                  strokeDasharray="3 3"
+                />
+
+                <XAxis
+                  dataKey="day"
+                  stroke="#94a3b8"
+                />
+
+                <YAxis
+                  stroke="#94a3b8"
+                />
+
+                <Tooltip
+                  contentStyle={{
+                    background: "#111827",
+                    border: "1px solid #263449",
+                    borderRadius: "8px",
+                    color: "#ffffff",
+                  }}
+                />
+
+                <Line
+                  type="monotone"
+                  dataKey="vehicles"
+                  stroke="#60a5fa"
+                  strokeWidth={3}
+                  dot={{ r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+
           </div>
         </div>
 
         {/* VIOLATION DISTRIBUTION */}
-        <div className="panel analytics-chart-panel">
+        <div className="analytics-panel">
 
-          <div className="panel-header">
+          <div className="analytics-panel-header">
             <div>
+              <span className="page-label">
+                VIOLATION BREAKDOWN
+              </span>
+
               <h3>Violation Distribution</h3>
-              <p>Breakdown by violation type</p>
             </div>
+
+            <span className="analytics-badge">
+              TOTAL
+            </span>
           </div>
 
-          <div className="analytics-pie">
-            <PieChart width={500} height={280}>
-              <Pie
-                data={violationDistribution}
-                dataKey="value"
-                nameKey="name"
-                cx="50%"
-                cy="45%"
-                innerRadius={55}
-                outerRadius={90}
-                paddingAngle={4}
-              >
-                <Cell fill="#ef4444" />
-                <Cell fill="#3b82f6" />
-                <Cell fill="#f59e0b" />
-                <Cell fill="#8b5cf6" />
-              </Pie>
+          <div
+            className="analytics-chart"
+            style={{ height: "320px" }}
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
 
-              <Tooltip contentStyle={chartTooltip} />
+                <Pie
+                  data={violationDistribution}
+                  cx="50%"
+                  cy="45%"
+                  innerRadius={70}
+                  outerRadius={105}
+                  paddingAngle={4}
+                  dataKey="value"
+                >
+                  {[
+                    "#60a5fa",
+                    "#818cf8",
+                    "#a78bfa",
+                    "#64748b",
+                  ].map((color, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={color}
+                    />
+                  ))}
+                </Pie>
 
-              <Legend />
-            </PieChart>
+                <Tooltip
+                  contentStyle={{
+                    background: "#111827",
+                    border: "1px solid #263449",
+                    borderRadius: "8px",
+                    color: "#ffffff",
+                  }}
+                />
+
+                <Legend
+                  verticalAlign="bottom"
+                  iconType="circle"
+                />
+
+              </PieChart>
+            </ResponsiveContainer>
           </div>
         </div>
-      </section>
 
-      {/* CONFIDENCE + PEAK HOURS */}
-      <section className="analytics-chart-grid">
+        {/* DETECTION CONFIDENCE */}
+        <div className="analytics-panel">
 
-        {/* AI CONFIDENCE */}
-        <div className="panel analytics-chart-panel">
-
-          <div className="panel-header">
+          <div className="analytics-panel-header">
             <div>
-              <h3>AI Detection Confidence</h3>
-              <p>Average confidence percentage</p>
+              <span className="page-label">
+                AI PERFORMANCE
+              </span>
+
+              <h3>Detection Confidence</h3>
             </div>
+
+            <span className="analytics-badge">
+              AI MODEL
+            </span>
           </div>
 
           <div className="analytics-chart">
+
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={confidenceData}
+                margin={{
+                  top: 10,
+                  right: 20,
+                  left: 0,
+                  bottom: 10,
+                }}
+              >
+                <CartesianGrid
+                  stroke="#263449"
+                  strokeDasharray="3 3"
+                />
+
+                <XAxis
+                  dataKey="day"
+                  stroke="#94a3b8"
+                />
+
+                <YAxis
+                  domain={[85, 100]}
+                  stroke="#94a3b8"
+                />
+
+                <Tooltip
+                  formatter={(value) => [
+                    `${value}%`,
+                    "Confidence",
+                  ]}
+                  contentStyle={{
+                    background: "#111827",
+                    border: "1px solid #263449",
+                    borderRadius: "8px",
+                    color: "#ffffff",
+                  }}
+                />
+
+                <Line
+                  type="monotone"
+                  dataKey="confidence"
+                  stroke="#60a5fa"
+                  strokeWidth={3}
+                  dot={{ r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+
+          </div>
+        </div>
+
+      </div>
+
+      {/* HOURLY TRAFFIC — FULL WIDTH */}
+      <div className="analytics-panel analytics-wide-panel traffic-hours-panel">
+
+        <div className="analytics-panel-header">
+          <div>
+            <span className="page-label">
+              TRAFFIC ACTIVITY
+            </span>
+
+            <h3>Hourly Traffic Volume</h3>
+          </div>
+
+          <span className="analytics-badge">
+            TODAY
+          </span>
+        </div>
+
+        <div className="analytics-chart">
+
+          <ResponsiveContainer width="100%" height="100%">
             <LineChart
-              width={500}
-              height={280}
-              data={confidenceData}
+              data={trafficHours}
               margin={{
-                top: 15,
-                right: 10,
+                top: 10,
+                right: 20,
                 left: 0,
-                bottom: 5,
+                bottom: 10,
               }}
             >
               <CartesianGrid
-                stroke="#1f2937"
+                stroke="#263449"
                 strokeDasharray="3 3"
-                vertical={false}
               />
 
               <XAxis
-                dataKey="day"
-                stroke="#64748b"
-                tickLine={false}
-                axisLine={false}
+                dataKey="time"
+                stroke="#94a3b8"
               />
 
               <YAxis
-                domain={[80, 100]}
-                stroke="#64748b"
-                tickLine={false}
-                axisLine={false}
+                stroke="#94a3b8"
               />
 
-              <Tooltip contentStyle={chartTooltip} />
+              <Tooltip
+                formatter={(value) => [
+                  `${value} vehicles`,
+                  "Traffic",
+                ]}
+                contentStyle={{
+                  background: "#111827",
+                  border: "1px solid #263449",
+                  borderRadius: "8px",
+                  color: "#ffffff",
+                }}
+              />
 
               <Line
                 type="monotone"
-                dataKey="confidence"
-                stroke="#22c55e"
+                dataKey="vehicles"
+                stroke="#60a5fa"
                 strokeWidth={3}
                 dot={{ r: 4 }}
+                activeDot={{ r: 6 }}
               />
+
             </LineChart>
-          </div>
+          </ResponsiveContainer>
+
         </div>
+      </div>
 
-        {/* PEAK TRAFFIC HOURS */}
-        <div className="panel analytics-chart-panel">
-
-          <div className="panel-header">
-            <div>
-              <h3>Peak Traffic Hours</h3>
-              <p>Vehicle activity by time</p>
-            </div>
-          </div>
-
-          <div className="analytics-chart">
-            <BarChart
-              width={500}
-              height={280}
-              data={trafficHours}
-              margin={{
-                top: 15,
-                right: 10,
-                left: 0,
-                bottom: 5,
-              }}
-            >
-              <CartesianGrid
-                stroke="#1f2937"
-                strokeDasharray="3 3"
-                vertical={false}
-              />
-
-              <XAxis
-                dataKey="hour"
-                stroke="#64748b"
-                tickLine={false}
-                axisLine={false}
-              />
-
-              <YAxis
-                stroke="#64748b"
-                tickLine={false}
-                axisLine={false}
-              />
-
-              <Tooltip contentStyle={chartTooltip} />
-
-              <Bar
-                dataKey="vehicles"
-                fill="#8b5cf6"
-                radius={[5, 5, 0, 0]}
-              />
-            </BarChart>
-          </div>
-        </div>
-
-      </section>
     </div>
   );
 }
