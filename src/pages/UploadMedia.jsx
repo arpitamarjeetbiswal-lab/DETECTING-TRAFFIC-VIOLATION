@@ -10,6 +10,8 @@ function UploadMedia({
   setAnalysisStatus,
   analysisHistory,
   setAnalysisHistory,
+  notifications,
+  setNotifications,
 }) {
   const fileInputRef = useRef(null);
 
@@ -132,6 +134,25 @@ function UploadMedia({
 
       setAnalysisHistory((prev) => [
         newHistoryRecord,
+        ...prev,
+      ]);
+      setNotifications((prev) => [
+        {
+          id: Date.now(),
+          title: "Analysis Completed",
+          message: `${selectedFile.name} analysis completed successfully.`,
+          time: "Just now",
+          type: "success",
+          read: false,
+        },
+        {
+          id: Date.now() + 1,
+          title: "Violations Detected",
+          message: `${result.violations} traffic violations detected in ${selectedFile.name}.`,
+          time: "Just now",
+          type: "warning",
+          read: false,
+        },
         ...prev,
       ]);
     }, 3000);

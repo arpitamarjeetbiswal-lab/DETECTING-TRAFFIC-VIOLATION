@@ -8,6 +8,9 @@ import {
     Tooltip,
 } from "recharts";
 
+
+import LiveTrafficPreview from "../components/LiveTrafficPreview";
+
 const trafficData = [
     { day: "Mon", vehicles: 820 },
     { day: "Tue", vehicles: 1040 },
@@ -70,6 +73,9 @@ function Dashboard({ setActivePage }) {
                 </div>
 
             </section>
+
+            {/* Live Traffic Monitoring */}
+            <LiveTrafficPreview />
 
             {/* Charts */}
             <section className="dashboard-grid">

@@ -1,6 +1,7 @@
 ## 📌 Project Status
 
 ### Frontend
+
 ✅ Dashboard  
 ✅ Upload Media  
 ✅ Traffic Monitoring  
@@ -9,10 +10,18 @@
 ✅ Detection History  
 ✅ Interactive charts and filters  
 ✅ Media upload and simulated AI analysis flow  
+✅ Login and logout flow  
+✅ Persistent user session  
+✅ Notifications panel  
+✅ Notification read/unread management  
+✅ Global search navigation  
+✅ Responsive dashboard layout  
 
 ### Backend
-🚧  Pending
-## 🚧 Pending 
+
+🚧 Pending
+
+## 🚧 Pending / Future Work
 
 The following features are planned for future development:
 
@@ -20,7 +29,7 @@ The following features are planned for future development:
 - [ ] Real-time AI traffic violation detection
 - [ ] YOLO/model integration for vehicle and violation detection
 - [ ] Database integration for storing detection records
-- [ ] User authentication and authorization
+- [ ] Secure user authentication and authorization
 - [ ] Real-time traffic monitoring using live camera feeds
 - [ ] Cloud deployment and production configuration
 - [ ] Advanced analytics and reporting
