@@ -1,190 +1,475 @@
 import { useRef, useState } from "react";
 
-function UploadMedia() {
+function UploadMedia({
+  setActivePage,
+  selectedFile,
+  setSelectedFile,
+  analysisResult,
+  setAnalysisResult,
+  analysisStatus,
+  setAnalysisStatus,
+  analysisHistory,
+  setAnalysisHistory,
+  notifications,
+  setNotifications,
+}) {
   const fileInputRef = useRef(null);
-  const [file, setFile] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
 
-  const handleFile = (selectedFile) => {
-    if (!selectedFile) return;
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState("");
 
-    setFile(selectedFile);
+  const MAX_FILE_SIZE = 100 * 1024 * 1024;
+
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "video/mp4",
+    "video/x-msvideo",
+  ];
+
+  const handleChange = (event) => {
+    const selected = event.target.files?.[0];
+
+    if (!selected) return;
+
+    setError("");
+
+    if (!allowedTypes.includes(selected.type)) {
+      setError("Only JPG, PNG, MP4 and AVI files are allowed.");
+      event.target.value = "";
+      return;
+    }
+
+    if (selected.size > MAX_FILE_SIZE) {
+      setError("File size must be less than 100 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    if (preview) {
+      URL.revokeObjectURL(preview);
+    }
+
+    const objectUrl = URL.createObjectURL(selected);
+
+    setSelectedFile(selected);
+    setPreview(objectUrl);
+    setAnalysisResult(null);
+    setAnalysisStatus("idle");
   };
 
-  const handleFileChange = (event) => {
-    handleFile(event.target.files[0]);
-  };
-
-  const handleDrop = (event) => {
-    event.preventDefault();
-    setIsDragging(false);
-
-    handleFile(event.dataTransfer.files[0]);
+  const openFilePicker = () => {
+    fileInputRef.current?.click();
   };
 
   const removeFile = () => {
-    setFile(null);
+    if (preview) {
+      URL.revokeObjectURL(preview);
+    }
+
+    setSelectedFile(null);
+    setPreview(null);
+    setAnalysisResult(null);
+    setAnalysisStatus("idle");
+    setError("");
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   };
 
+  const startAnalysis = () => {
+    if (!selectedFile) {
+      setError("Please select a media file first.");
+      return;
+    }
+
+    setError("");
+    setAnalysisStatus("processing");
+    setAnalysisResult(null);
+
+    setTimeout(() => {
+      const result = {
+        vehicles: 42,
+        violations: 8,
+        confidence: 95.8,
+        helmet: 4,
+        overspeed: 2,
+        tripleRiding: 2,
+      };
+
+      setAnalysisResult(result);
+      setAnalysisStatus("completed");
+
+      const newHistoryRecord = {
+        id: `D-${2050 + analysisHistory.length}`,
+        fileName: selectedFile.name,
+        type: selectedFile.type.startsWith("video/")
+          ? "Video"
+          : "Image",
+        violations:
+          result.helmet > 0 && result.overspeed > 0
+            ? "Helmet + Overspeed"
+            : result.helmet > 0
+              ? "No Helmet"
+              : result.overspeed > 0
+                ? "Overspeed"
+                : result.tripleRiding > 0
+                  ? "Triple Riding"
+                  : "No Violations",
+        vehicles: result.vehicles,
+        violationCount: result.violations,
+        confidence: result.confidence,
+        date: new Date().toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }),
+        time: new Date().toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        status: "Completed",
+      };
+
+      setAnalysisHistory((prev) => [
+        newHistoryRecord,
+        ...prev,
+      ]);
+      setNotifications((prev) => [
+        {
+          id: Date.now(),
+          title: "Analysis Completed",
+          message: `${selectedFile.name} analysis completed successfully.`,
+          time: "Just now",
+          type: "success",
+          read: false,
+        },
+        {
+          id: Date.now() + 1,
+          title: "Violations Detected",
+          message: `${result.violations} traffic violations detected in ${selectedFile.name}.`,
+          time: "Just now",
+          type: "warning",
+          read: false,
+        },
+        ...prev,
+      ]);
+    }, 3000);
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes < 1024 * 1024) {
+      return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
   return (
     <div className="page-content upload-page">
-
-      {/* Header */}
-      <div className="page-header upload-header">
+      {/* Page Header */}
+      <div className="page-header">
         <div>
-          <span className="page-label">AI ANALYSIS</span>
+          <span className="page-label">MEDIA ANALYSIS</span>
+
           <h1>Upload Media</h1>
+
           <p>
-            Upload traffic footage and let the AI engine detect violations.
+            Upload traffic footage or images for AI-powered violation
+            detection.
           </p>
         </div>
       </div>
 
-      {/* Main Upload Area */}
-      <div className="upload-main-grid">
-
+      <div className="upload-grid">
         {/* Upload Card */}
         <div className="upload-card">
-
           <div
-            className={`drop-zone ${isDragging ? "dragging" : ""}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragging(true);
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current.click()}
+            className="drop-zone"
+            onClick={openFilePicker}
           >
-            <div className="upload-cloud">
-              ↑
-            </div>
-
-            <h2>
-              {isDragging
-                ? "Drop your file here"
-                : "Upload traffic media"}
-            </h2>
-
-            <p>
-              Drag and drop your image or video here
-              <br />
-              or <span>browse from your computer</span>
-            </p>
-
-            <div className="format-info">
-              <span>JPG</span>
-              <span>PNG</span>
-              <span>MP4</span>
-              <span>AVI</span>
-            </div>
-
-            <small>Maximum file size: 100 MB</small>
-
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,video/*"
-              hidden
-              onChange={handleFileChange}
+              accept=".jpg,.jpeg,.png,.mp4,.avi"
+              onChange={handleChange}
+              style={{ display: "none" }}
             />
+
+            {!selectedFile ? (
+              <>
+                <div className="upload-icon">↑</div>
+
+                <h3>Drop your media here</h3>
+
+                <p>or click to browse from your computer</p>
+
+                <div className="upload-formats">
+                  <span>JPG</span>
+                  <span>PNG</span>
+                  <span>MP4</span>
+                  <span>AVI</span>
+                </div>
+
+                <small>Maximum file size: 100 MB</small>
+              </>
+            ) : (
+              <>
+                <div className="upload-icon">✓</div>
+
+                <h3>File Selected</h3>
+
+                <p>{selectedFile.name}</p>
+              </>
+            )}
           </div>
 
-          {/* Selected File */}
-          {file && (
-            <div className="selected-file-card">
+          {/* Error */}
+          {error && (
+            <div className="upload-error">
+              {error}
+            </div>
+          )}
 
-              <div className="file-preview">
-                {file.type.startsWith("image/") ? "IMG" : "VID"}
-              </div>
+          {/* Preview */}
+          {selectedFile && preview && (
+            <div className="media-preview-container">
+              <h3>Preview</h3>
 
-              <div className="file-details">
-                <strong>{file.name}</strong>
+              {selectedFile.type.startsWith("image/") && (
+                <img
+                  src={preview}
+                  alt="Selected traffic media"
+                  className="preview-image"
+                />
+              )}
 
-                <span>
-                  {(file.size / 1024 / 1024).toFixed(2)} MB
-                </span>
+              {selectedFile.type.startsWith("video/") && (
+                <video
+                  src={preview}
+                  controls
+                  className="preview-video"
+                />
+              )}
+            </div>
+          )}
+
+          {/* File Information */}
+          {selectedFile && (
+            <div className="selected-file">
+              <div className="file-info">
+                <div className="file-type-icon">
+                  {selectedFile.type.startsWith("video/")
+                    ? "VID"
+                    : "IMG"}
+                </div>
+
+                <div>
+                  <strong>{selectedFile.name}</strong>
+
+                  <span>
+                    {formatFileSize(selectedFile.size)}
+                  </span>
+                </div>
               </div>
 
               <button
+                type="button"
                 className="remove-file"
                 onClick={removeFile}
               >
-                ×
+                Remove
               </button>
-
             </div>
           )}
 
-          {file && (
-            <button className="start-analysis-btn">
-              <span>✦</span>
-              Start AI Analysis
+          {/* Start Analysis */}
+          {selectedFile && (
+            <button
+              type="button"
+              className="start-analysis-btn"
+              onClick={startAnalysis}
+              disabled={analysisStatus === "processing"}
+            >
+              {analysisStatus === "processing"
+                ? "AI Analysis in Progress..."
+                : "Start AI Analysis →"}
             </button>
+          )}
+
+          {/* Processing */}
+          {analysisStatus === "processing" && (
+            <div className="analysis-status">
+              <span className="analysis-spinner"></span>
+
+              <div>
+                <strong>
+                  AI is analyzing your media...
+                </strong>
+
+                <p>
+                  Detecting vehicles and traffic violations.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Success */}
+          {analysisStatus === "completed" && (
+            <div className="analysis-success">
+              <strong>✓ Analysis Completed</strong>
+
+              <p>
+                AI analysis finished successfully. Detection
+                results are ready.
+              </p>
+            </div>
+          )}
+
+          {/* Results */}
+          {analysisStatus === "completed" && analysisResult && (
+            <div className="analysis-results">
+              <div className="results-header">
+                <div>
+                  <span className="page-label">
+                    AI RESULTS
+                  </span>
+
+                  <h3>Detection Results</h3>
+                </div>
+
+                <span className="result-complete">
+                  ● Completed
+                </span>
+              </div>
+
+              <div className="result-stats">
+                <div className="result-stat">
+                  <span>Vehicles</span>
+                  <strong>
+                    {analysisResult.vehicles}
+                  </strong>
+                </div>
+
+                <div className="result-stat">
+                  <span>Violations</span>
+                  <strong>
+                    {analysisResult.violations}
+                  </strong>
+                </div>
+
+                <div className="result-stat">
+                  <span>Confidence</span>
+                  <strong>
+                    {analysisResult.confidence}%
+                  </strong>
+                </div>
+              </div>
+
+              <div className="violation-results">
+                <div className="violation-result">
+                  <span>No Helmet</span>
+                  <strong>
+                    {analysisResult.helmet}
+                  </strong>
+                </div>
+
+                <div className="violation-result">
+                  <span>Overspeed</span>
+                  <strong>
+                    {analysisResult.overspeed}
+                  </strong>
+                </div>
+
+                <div className="violation-result">
+                  <span>Triple Riding</span>
+                  <strong>
+                    {analysisResult.tripleRiding}
+                  </strong>
+                </div>
+              </div>
+
+              {/* View Monitoring */}
+              <button
+                type="button"
+                className="primary-action"
+                onClick={() => setActivePage("monitoring")}
+                style={{ marginTop: "16px" }}
+              >
+                View Monitoring →
+              </button>
+            </div>
           )}
         </div>
 
-        {/* Detection Panel */}
+        {/* AI Detection Panel */}
         <div className="detection-panel">
-
-          <div className="panel-heading">
+          <div className="panel-header">
             <div>
-              <span className="page-label">DETECTION ENGINE</span>
-              <h3>What should we detect?</h3>
+              <span className="page-label">
+                AI ENGINE
+              </span>
+
+              <h3>Detection Models</h3>
             </div>
 
-            <div className="ai-status">
-              <span></span>
-              Ready
-            </div>
+            <span className="ai-ready">
+              ● Ready
+            </span>
           </div>
 
-          <div className="detection-card active">
-            <div className="detection-symbol">H</div>
-
+          <div className="detection-model">
             <div>
               <strong>Helmet Violation</strong>
-              <p>Detect riders without helmets</p>
+
+              <span>
+                Detects riders without helmets
+              </span>
             </div>
 
-            <div className="check-mark">✓</div>
+            <span className="model-status">
+              ✓
+            </span>
           </div>
 
-          <div className="detection-card active">
-            <div className="detection-symbol">3</div>
-
+          <div className="detection-model">
             <div>
               <strong>Triple Riding</strong>
-              <p>Detect more than two riders</p>
+
+              <span>
+                Detects more than two riders
+              </span>
             </div>
 
-            <div className="check-mark">✓</div>
+            <span className="model-status">
+              ✓
+            </span>
           </div>
 
-          <div className="detection-card active">
-            <div className="detection-symbol">S</div>
-
+          <div className="detection-model">
             <div>
               <strong>Overspeed</strong>
-              <p>Identify vehicles exceeding limits</p>
+
+              <span>
+                Identifies vehicles exceeding speed limits
+              </span>
             </div>
 
-            <div className="check-mark">✓</div>
+            <span className="model-status">
+              ✓
+            </span>
           </div>
 
-          <div className="engine-note">
-            <span>✦</span>
+          <div className="ai-info">
+            <strong>AI-powered analysis</strong>
 
             <p>
-              AI detection will automatically analyze the
-              uploaded media and generate violation results.
+              Your uploaded media will be processed using
+              computer vision models to identify traffic
+              violations.
             </p>
           </div>
-
         </div>
       </div>
     </div>

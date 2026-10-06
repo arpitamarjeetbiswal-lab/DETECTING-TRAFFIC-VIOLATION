@@ -1,2 +1,37 @@
-# DETECTING-TRAFFIC-VIOLATION
-An IoT-enabled intelligent traffic monitoring system that uses Raspberry Pi, YOLOv8, OpenCV, and EasyOCR to detect helmet violations, recognize vehicle number plates, and automatically report violations through a Node.js REST API with a web dashboard.
+## 📌 Project Status
+
+### Frontend
+
+✅ Dashboard  
+✅ Upload Media  
+✅ Traffic Monitoring  
+✅ Violations  
+✅ Analytics  
+✅ Detection History  
+✅ Interactive charts and filters  
+✅ Media upload and simulated AI analysis flow  
+✅ Login and logout flow  
+✅ Persistent user session  
+✅ Notifications panel  
+✅ Notification read/unread management  
+✅ Global search navigation  
+✅ Responsive dashboard layout  
+
+### Backend
+
+🚧 Pending
+
+## 🚧 Pending / Future Work
+
+The following features are planned for future development:
+
+- [ ] Backend API integration
+- [ ] Real-time AI traffic violation detection
+- [ ] YOLO/model integration for vehicle and violation detection
+- [ ] Database integration for storing detection records
+- [ ] Secure user authentication and authorization
+- [ ] Real-time traffic monitoring using live camera feeds
+- [ ] Cloud deployment and production configuration
+- [ ] Advanced analytics and reporting
+- [ ] Export detection reports
+- [ ] Performance optimization and final production testing
