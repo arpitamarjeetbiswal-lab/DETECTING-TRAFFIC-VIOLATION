@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
 
+const API_URL = "http://127.0.0.1:5000";
+
 function UploadMedia({
   setActivePage,
   selectedFile,
@@ -20,12 +22,12 @@ function UploadMedia({
 
   const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
-  const allowedTypes = [
-    "image/jpeg",
-    "image/png",
-    "video/mp4",
-    "video/x-msvideo",
-  ];
+  // Current backend supports images only.
+  const allowedTypes = ["image/jpeg", "image/png"];
+
+  // ==========================================
+  // HANDLE IMAGE SELECTION
+  // ==========================================
 
   const handleChange = (event) => {
     const selected = event.target.files?.[0];
@@ -35,7 +37,7 @@ function UploadMedia({
     setError("");
 
     if (!allowedTypes.includes(selected.type)) {
-      setError("Only JPG, PNG, MP4 and AVI files are allowed.");
+      setError("Only JPG and PNG images are supported.");
       event.target.value = "";
       return;
     }
@@ -54,21 +56,35 @@ function UploadMedia({
 
     setSelectedFile(selected);
     setPreview(objectUrl);
+
     setAnalysisResult(null);
     setAnalysisStatus("idle");
   };
 
+  // ==========================================
+  // OPEN FILE PICKER
+  // ==========================================
+
   const openFilePicker = () => {
+    if (analysisStatus === "processing") return;
+
     fileInputRef.current?.click();
   };
 
+  // ==========================================
+  // REMOVE SELECTED FILE
+  // ==========================================
+
   const removeFile = () => {
+    if (analysisStatus === "processing") return;
+
     if (preview) {
       URL.revokeObjectURL(preview);
     }
 
     setSelectedFile(null);
     setPreview(null);
+
     setAnalysisResult(null);
     setAnalysisStatus("idle");
     setError("");
@@ -78,57 +94,156 @@ function UploadMedia({
     }
   };
 
-  const startAnalysis = () => {
+  // ==========================================
+  // REAL AI ANALYSIS
+  // ==========================================
+
+  const startAnalysis = async () => {
     if (!selectedFile) {
-      setError("Please select a media file first.");
+      setError("Please select an image first.");
       return;
     }
+
+    if (!allowedTypes.includes(selectedFile.type)) {
+      setError("Only JPG and PNG images are supported.");
+      return;
+    }
+
+    if (analysisStatus === "processing") return;
 
     setError("");
     setAnalysisStatus("processing");
     setAnalysisResult(null);
 
-    setTimeout(() => {
+    try {
+      // Prepare the selected image for Flask.
+      const formData = new FormData();
+
+      formData.append("file", selectedFile);
+
+      // Send image to backend.
+      const response = await fetch(
+        `${API_URL}/api/analyze`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Image analysis failed."
+        );
+      }
+
+      // ======================================
+      // PROCESS ACTUAL YOLO RESULTS
+      // ======================================
+
+      const detections = Array.isArray(data.detections)
+        ? data.detections
+        : [];
+
+      const helmetViolations = detections.filter(
+        (item) =>
+          item.violation_type === "Without Helmet"
+      ).length;
+
+      // Average confidence of helmet-model detections.
+      const averageConfidence =
+        detections.length > 0
+          ? detections.reduce(
+              (sum, item) =>
+                sum + Number(item.confidence || 0),
+              0
+            ) / detections.length
+          : null;
+
       const result = {
-        vehicles: 42,
-        violations: 8,
-        confidence: 95.8,
-        helmet: 4,
-        overspeed: 2,
-        tripleRiding: 2,
+        // Motorcycle count from the general YOLO model.
+        vehicles: data.motorcycles_detected ?? null,
+
+        // Combined helmet + triple-riding violations.
+        violations: data.total_violations ?? 0,
+
+        confidence:
+          averageConfidence === null
+            ? null
+            : Number(averageConfidence.toFixed(2)),
+
+        helmet:
+          data.helmet_violations ?? helmetViolations,
+
+        // Overspeed detection is not implemented yet.
+        overspeed: null,
+
+        tripleRiding: data.triple_riding ?? 0,
+
+        personsDetected: data.persons_detected ?? 0,
+
+        detections,
+
+        totalDetections:
+          data.total_detections ?? detections.length,
+
+        // Flask serves the marked image from this URL.
+        annotatedImageUrl: data.annotated_image_url
+          ? `${API_URL}${data.annotated_image_url}`
+          : null,
+
+        bikeResults: Array.isArray(data.bike_results)
+          ? data.bike_results
+          : [],
       };
+
+      // ======================================
+      // UPDATE FRONTEND
+      // ======================================
 
       setAnalysisResult(result);
       setAnalysisStatus("completed");
 
+      // ======================================
+      // SAVE ANALYSIS HISTORY
+      // ======================================
+
+      const violationLabel =
+        result.helmet > 0 && result.tripleRiding > 0
+          ? "No Helmet + Triple Riding"
+          : result.helmet > 0
+            ? "No Helmet"
+            : result.tripleRiding > 0
+              ? "Triple Riding"
+              : "No Helmet or Triple Riding Detected";
+
       const newHistoryRecord = {
-        id: `D-${2050 + analysisHistory.length}`,
+        id: `D-${Date.now()}`,
+
         fileName: selectedFile.name,
-        type: selectedFile.type.startsWith("video/")
-          ? "Video"
-          : "Image",
-        violations:
-          result.helmet > 0 && result.overspeed > 0
-            ? "Helmet + Overspeed"
-            : result.helmet > 0
-              ? "No Helmet"
-              : result.overspeed > 0
-                ? "Overspeed"
-                : result.tripleRiding > 0
-                  ? "Triple Riding"
-                  : "No Violations",
+
+        type: "Image",
+
+        violations: violationLabel,
+
         vehicles: result.vehicles,
+
         violationCount: result.violations,
+
         confidence: result.confidence,
+
         date: new Date().toLocaleDateString("en-GB", {
           day: "2-digit",
           month: "short",
           year: "numeric",
         }),
+
         time: new Date().toLocaleTimeString("en-US", {
           hour: "2-digit",
           minute: "2-digit",
         }),
+
         status: "Completed",
       };
 
@@ -136,27 +251,69 @@ function UploadMedia({
         newHistoryRecord,
         ...prev,
       ]);
-      setNotifications((prev) => [
+
+      // ======================================
+      // UPDATE NOTIFICATIONS
+      // ======================================
+
+      const newNotifications = [
         {
           id: Date.now(),
+
           title: "Analysis Completed",
-          message: `${selectedFile.name} analysis completed successfully.`,
+
+          message: `${selectedFile.name} analyzed successfully.`,
+
           time: "Just now",
+
           type: "success",
+
           read: false,
         },
-        {
+      ];
+
+      if (result.violations > 0) {
+        newNotifications.push({
           id: Date.now() + 1,
-          title: "Violations Detected",
-          message: `${result.violations} traffic violations detected in ${selectedFile.name}.`,
+
+          title: "Traffic Violations Detected",
+
+          message:
+            `${result.violations} total violation(s) detected in ` +
+            `${selectedFile.name}: ` +
+            `${result.helmet} no-helmet detection(s) and ` +
+            `${result.tripleRiding} triple-riding detection(s).`,
+
           time: "Just now",
+
           type: "warning",
+
           read: false,
-        },
+        });
+      }
+
+      setNotifications((prev) => [
+        ...newNotifications,
         ...prev,
       ]);
-    }, 3000);
+
+    } catch (err) {
+      console.error("AI Analysis Error:", err);
+
+      setError(
+        err.message === "Failed to fetch"
+          ? "Cannot connect to Flask. Make sure the backend is running on port 5000."
+          : err.message || "Something went wrong during analysis."
+      );
+
+      setAnalysisResult(null);
+      setAnalysisStatus("idle");
+    }
   };
+
+  // ==========================================
+  // FORMAT FILE SIZE
+  // ==========================================
 
   const formatFileSize = (bytes) => {
     if (bytes < 1024 * 1024) {
@@ -166,25 +323,35 @@ function UploadMedia({
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
+  // ==========================================
+  // FRONTEND
+  // ==========================================
+
   return (
     <div className="page-content upload-page">
-      {/* Page Header */}
+
+      {/* PAGE HEADER */}
       <div className="page-header">
         <div>
-          <span className="page-label">MEDIA ANALYSIS</span>
+          <span className="page-label">
+            MEDIA ANALYSIS
+          </span>
 
           <h1>Upload Media</h1>
 
           <p>
-            Upload traffic footage or images for AI-powered violation
-            detection.
+            Upload traffic images for AI-powered helmet
+            and triple-riding violation detection.
           </p>
         </div>
       </div>
 
       <div className="upload-grid">
-        {/* Upload Card */}
+
+        {/* UPLOAD CARD */}
         <div className="upload-card">
+
+          {/* FILE PICKER */}
           <div
             className="drop-zone"
             onClick={openFilePicker}
@@ -192,31 +359,38 @@ function UploadMedia({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".jpg,.jpeg,.png,.mp4,.avi"
+              accept=".jpg,.jpeg,.png"
               onChange={handleChange}
+              disabled={analysisStatus === "processing"}
               style={{ display: "none" }}
             />
 
             {!selectedFile ? (
               <>
-                <div className="upload-icon">↑</div>
+                <div className="upload-icon">
+                  ↑
+                </div>
 
-                <h3>Drop your media here</h3>
+                <h3>Upload Traffic Image</h3>
 
-                <p>or click to browse from your computer</p>
+                <p>
+                  Click to browse from your computer
+                </p>
 
                 <div className="upload-formats">
                   <span>JPG</span>
                   <span>PNG</span>
-                  <span>MP4</span>
-                  <span>AVI</span>
                 </div>
 
-                <small>Maximum file size: 100 MB</small>
+                <small>
+                  Maximum file size: 100 MB
+                </small>
               </>
             ) : (
               <>
-                <div className="upload-icon">✓</div>
+                <div className="upload-icon">
+                  ✓
+                </div>
 
                 <h3>File Selected</h3>
 
@@ -225,66 +399,63 @@ function UploadMedia({
             )}
           </div>
 
-          {/* Error */}
+          {/* ERROR MESSAGE */}
           {error && (
             <div className="upload-error">
               {error}
             </div>
           )}
 
-          {/* Preview */}
+          {/* ORIGINAL IMAGE PREVIEW */}
           {selectedFile && preview && (
             <div className="media-preview-container">
-              <h3>Preview</h3>
 
-              {selectedFile.type.startsWith("image/") && (
-                <img
-                  src={preview}
-                  alt="Selected traffic media"
-                  className="preview-image"
-                />
-              )}
+              <h3>Original Image</h3>
 
-              {selectedFile.type.startsWith("video/") && (
-                <video
-                  src={preview}
-                  controls
-                  className="preview-video"
-                />
-              )}
+              <img
+                src={preview}
+                alt="Selected traffic media"
+                className="preview-image"
+              />
+
             </div>
           )}
 
-          {/* File Information */}
+          {/* FILE INFORMATION */}
           {selectedFile && (
             <div className="selected-file">
+
               <div className="file-info">
+
                 <div className="file-type-icon">
-                  {selectedFile.type.startsWith("video/")
-                    ? "VID"
-                    : "IMG"}
+                  IMG
                 </div>
 
                 <div>
-                  <strong>{selectedFile.name}</strong>
+                  <strong>
+                    {selectedFile.name}
+                  </strong>
 
                   <span>
                     {formatFileSize(selectedFile.size)}
                   </span>
                 </div>
+
               </div>
 
               <button
                 type="button"
                 className="remove-file"
                 onClick={removeFile}
+                disabled={analysisStatus === "processing"}
               >
                 Remove
               </button>
+
             </div>
           )}
 
-          {/* Start Analysis */}
+          {/* START ANALYSIS */}
           {selectedFile && (
             <button
               type="button"
@@ -298,78 +469,107 @@ function UploadMedia({
             </button>
           )}
 
-          {/* Processing */}
+          {/* PROCESSING */}
           {analysisStatus === "processing" && (
             <div className="analysis-status">
+
               <span className="analysis-spinner"></span>
 
               <div>
                 <strong>
-                  AI is analyzing your media...
+                  AI is analyzing your image...
                 </strong>
 
                 <p>
-                  Detecting vehicles and traffic violations.
+                  Running helmet and motorcycle
+                  detection models.
                 </p>
               </div>
+
             </div>
           )}
 
-          {/* Success */}
+          {/* SUCCESS MESSAGE */}
           {analysisStatus === "completed" && (
             <div className="analysis-success">
-              <strong>✓ Analysis Completed</strong>
+
+              <strong>
+                ✓ Analysis Completed
+              </strong>
 
               <p>
-                AI analysis finished successfully. Detection
-                results are ready.
+                AI analysis finished successfully.
+                Detection results are ready.
               </p>
+
             </div>
           )}
 
-          {/* Results */}
-          {analysisStatus === "completed" && analysisResult && (
+          {/* ==================================
+              ANALYSIS RESULTS
+          ================================== */}
+
+          {analysisStatus === "completed" &&
+            analysisResult && (
+
             <div className="analysis-results">
+
+              {/* RESULTS HEADER */}
               <div className="results-header">
+
                 <div>
                   <span className="page-label">
                     AI RESULTS
                   </span>
 
-                  <h3>Detection Results</h3>
+                  <h3>
+                    Detection Results
+                  </h3>
                 </div>
 
                 <span className="result-complete">
                   ● Completed
                 </span>
+
               </div>
 
+              {/* RESULT STATISTICS */}
               <div className="result-stats">
+
                 <div className="result-stat">
-                  <span>Vehicles</span>
+                  <span>Motorcycles</span>
+
                   <strong>
-                    {analysisResult.vehicles}
+                    {analysisResult.vehicles ?? "N/A"}
                   </strong>
                 </div>
 
                 <div className="result-stat">
-                  <span>Violations</span>
+                  <span>Total Violations</span>
+
                   <strong>
                     {analysisResult.violations}
                   </strong>
                 </div>
 
                 <div className="result-stat">
-                  <span>Confidence</span>
+                  <span>Avg. Helmet Confidence</span>
+
                   <strong>
-                    {analysisResult.confidence}%
+                    {analysisResult.confidence == null
+                      ? "N/A"
+                      : `${analysisResult.confidence}%`}
                   </strong>
                 </div>
+
               </div>
 
+              {/* VIOLATION COUNTS */}
               <div className="violation-results">
+
                 <div className="violation-result">
                   <span>No Helmet</span>
+
                   <strong>
                     {analysisResult.helmet}
                   </strong>
@@ -377,35 +577,158 @@ function UploadMedia({
 
                 <div className="violation-result">
                   <span>Overspeed</span>
+
                   <strong>
-                    {analysisResult.overspeed}
+                    {analysisResult.overspeed ?? "N/A"}
                   </strong>
                 </div>
 
                 <div className="violation-result">
                   <span>Triple Riding</span>
+
                   <strong>
                     {analysisResult.tripleRiding}
                   </strong>
                 </div>
+
               </div>
 
-              {/* View Monitoring */}
+              {/* ==================================
+                  ANNOTATED AI IMAGE
+              ================================== */}
+
+              {analysisResult.annotatedImageUrl && (
+                <div className="media-preview-container">
+
+                  <h3>AI Detection Image</h3>
+
+                  <p>
+                    Red: Violation | Green: Helmet /
+                    Motorcycle | Blue: Detected Person
+                  </p>
+
+                  <img
+                    src={analysisResult.annotatedImageUrl}
+                    alt="Traffic image with AI detection boxes"
+                    className="preview-image"
+                  />
+
+                </div>
+              )}
+
+              {/* ==================================
+                  MOTORCYCLE ANALYSIS
+              ================================== */}
+
+              <div className="violation-results">
+
+                <h3>Motorcycle Analysis</h3>
+
+                <p>
+                  Motorcycles detected:{" "}
+                  {analysisResult.vehicles ?? "N/A"}
+                </p>
+
+                <p>
+                  Persons detected:{" "}
+                  {analysisResult.personsDetected}
+                </p>
+
+                {analysisResult.bikeResults.length === 0 ? (
+                  <p>
+                    No motorcycles detected in this image.
+                  </p>
+                ) : (
+                  analysisResult.bikeResults.map((bike) => (
+
+                    <div
+                      className="violation-result"
+                      key={bike.bike_index}
+                    >
+
+                      <span>
+                        Bike {bike.bike_index}:{" "}
+                        {bike.person_count} associated
+                        person(s)
+                      </span>
+
+                      <strong>
+                        {bike.status}
+                      </strong>
+
+                    </div>
+                  ))
+                )}
+
+                <small>
+                  Rider counts are estimates based on
+                  detected person positions.
+                </small>
+
+              </div>
+
+              {/* ==================================
+                  HELMET DETECTION DETAILS
+              ================================== */}
+
+              <div className="violation-results">
+
+                <h3>YOLO Helmet Detection Details</h3>
+
+                {analysisResult.detections.length === 0 ? (
+                  <p>
+                    No helmet detections found above
+                    the confidence threshold.
+                  </p>
+                ) : (
+                  analysisResult.detections.map(
+                    (detection, index) => (
+
+                      <div
+                        className="violation-result"
+                        key={index}
+                      >
+
+                        <span>
+                          {detection.violation_type}
+                        </span>
+
+                        <strong>
+                          {detection.confidence}%
+                        </strong>
+
+                      </div>
+                    )
+                  )
+                )}
+
+              </div>
+
+              {/* VIEW MONITORING */}
               <button
                 type="button"
                 className="primary-action"
-                onClick={() => setActivePage("monitoring")}
+                onClick={() =>
+                  setActivePage("monitoring")
+                }
                 style={{ marginTop: "16px" }}
               >
                 View Monitoring →
               </button>
+
             </div>
           )}
+
         </div>
 
-        {/* AI Detection Panel */}
+        {/* ==================================
+            AI DETECTION PANEL
+        ================================== */}
+
         <div className="detection-panel">
+
           <div className="panel-header">
+
             <div>
               <span className="page-label">
                 AI ENGINE
@@ -417,61 +740,87 @@ function UploadMedia({
             <span className="ai-ready">
               ● Ready
             </span>
+
           </div>
 
+          {/* HELMET DETECTION */}
           <div className="detection-model">
+
             <div>
-              <strong>Helmet Violation</strong>
+              <strong>
+                Helmet Violation
+              </strong>
 
               <span>
-                Detects riders without helmets
+                Real YOLO helmet detection connected
               </span>
             </div>
 
             <span className="model-status">
               ✓
             </span>
+
           </div>
 
+          {/* TRIPLE RIDING */}
           <div className="detection-model">
+
             <div>
-              <strong>Triple Riding</strong>
+              <strong>
+                Triple Riding
+              </strong>
 
               <span>
-                Detects more than two riders
+                YOLO motorcycle/person association
+                connected
               </span>
             </div>
 
             <span className="model-status">
               ✓
             </span>
+
           </div>
 
+          {/* OVERSPEED */}
           <div className="detection-model">
+
             <div>
-              <strong>Overspeed</strong>
+              <strong>
+                Overspeed
+              </strong>
 
               <span>
-                Identifies vehicles exceeding speed limits
+                Backend integration pending
               </span>
             </div>
 
             <span className="model-status">
-              ✓
+              —
             </span>
+
           </div>
 
+          {/* INFORMATION */}
           <div className="ai-info">
-            <strong>AI-powered analysis</strong>
+
+            <strong>
+              AI-powered traffic analysis
+            </strong>
 
             <p>
-              Your uploaded media will be processed using
-              computer vision models to identify traffic
-              violations.
+              Images are processed using the trained
+              helmet model and YOLO motorcycle/person
+              detection. Helmet violations and suspected
+              triple-riding cases are recorded in SQLite.
             </p>
+
           </div>
+
         </div>
+
       </div>
+
     </div>
   );
 }
