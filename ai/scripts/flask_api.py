@@ -427,17 +427,18 @@ def analyze_image():
 
         person_count = len(associated_persons)
 
-        # Geometric matching alone cannot confirm
-        # a traffic violation. Flag possible cases
-        # for human review instead.
+       # Three or more associated persons are
+        # flagged as suspected triple riding.
         needs_review = person_count >= 3
 
-        status = (
-            "Needs Review"
-            if needs_review
-            else "No triple riding confirmed"
-        )
+        if needs_review:
+            triple_riding_count += 1
 
+        status = (
+            "Suspected Triple Riding - Needs Review"
+            if needs_review
+            else "No triple riding detected"
+        )
         bike_results.append({
             "bike_index": bike_index,
             "box": motorcycle["box"],
