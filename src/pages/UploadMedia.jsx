@@ -196,6 +196,10 @@ function UploadMedia({
         bikeResults: Array.isArray(data.bike_results)
           ? data.bike_results
           : [],
+
+        plateResults: Array.isArray(data.plate_results)
+          ? data.plate_results
+          : [],
       };
 
       // ======================================
@@ -668,6 +672,49 @@ function UploadMedia({
               </div>
 
               {/* ==================================
+                  NUMBER-PLATE READS
+              ================================== */}
+
+              <div className="violation-results">
+
+                <h3>Number Plate Reads</h3>
+
+                {analysisResult.plateResults.length === 0 ? (
+                  <p>No number plates detected.</p>
+                ) : (
+                  analysisResult.plateResults.map((plate, index) => (
+
+                    <div
+                      className="violation-result"
+                      key={`${plate.box?.join("-") || "plate"}-${index}`}
+                    >
+
+                      <span>
+                        {plate.plate_number || "Unreadable plate"}
+                      </span>
+
+                      <strong>
+                        {plate.motorcycle_index
+                          ? `Bike ${plate.motorcycle_index} · `
+                          : "Unmatched · "}
+                        {plate.status.replaceAll("_", " ")}
+                        {Number.isFinite(plate.ocr_confidence)
+                          ? ` · ${(plate.ocr_confidence * 100).toFixed(1)}% OCR confidence`
+                          : ""}
+                      </strong>
+
+                    </div>
+                  ))
+                )}
+
+                <small>
+                  Plate text is an OCR estimate. Review it before using it
+                  to identify a vehicle.
+                </small>
+
+              </div>
+
+              {/* ==================================
                   HELMET DETECTION DETAILS
               ================================== */}
 
@@ -691,6 +738,11 @@ function UploadMedia({
 
                         <span>
                           {detection.violation_type}
+                          {detection.number_plate
+                            ? ` · Bike ${detection.motorcycle_index} · Plate ${detection.number_plate}`
+                            : detection.violation_type === "Without Helmet"
+                              ? " · Plate not confidently matched"
+                              : ""}
                         </span>
 
                         <strong>

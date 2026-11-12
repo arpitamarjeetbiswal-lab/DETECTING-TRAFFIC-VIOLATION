@@ -11,6 +11,27 @@ node_modules
 dist
 dist-ssr
 *.local
+.venv/
+.venv_*/
+__pycache__/
+*.py[cod]
+
+# Local uploads, datasets, and generated inference/training artifacts
+ai/uploads/
+ai/outputs/
+ai/datasets/
+/runs/
+ai/runs/*
+!ai/runs/plate_detection/
+ai/runs/plate_detection/*
+!ai/runs/plate_detection/test_training_v2/
+ai/runs/plate_detection/test_training_v2/*
+!ai/runs/plate_detection/test_training_v2/weights/
+ai/runs/plate_detection/test_training_v2/weights/*
+!ai/runs/plate_detection/test_training_v2/weights/best.pt
+
+# Local database contains machine-specific test records
+ai/traffic_violations.db
 
 # Editor directories and files
 .vscode/*
