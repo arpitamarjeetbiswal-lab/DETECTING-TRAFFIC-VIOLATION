@@ -8,7 +8,6 @@ import Dashboard from "./pages/Dashboard";
 import UploadMedia from "./pages/UploadMedia";
 import TrafficMonitoring from "./pages/TrafficMonitoring";
 import Violations from "./pages/Violations";
-import Analytics from "./pages/Analytics";
 import DetectionHistory from "./pages/DetectionHistory";
 
 function App() {
