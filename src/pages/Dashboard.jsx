@@ -38,7 +38,7 @@ function Dashboard({ setActivePage, analysisHistory = [] }) {
             (item) => classifyViolationRecord(item).hasNoHelmet
         ).length;
         const tripleReview = savedViolations.filter(
-            (item) => classifyViolationRecord(item).hasTripleRiding
+            (item) => classifyViolationRecord(item).requiresTripleReview
         ).length;
         const platesAvailable = savedViolations.filter(
             (item) => item.number_plate && item.number_plate !== "NOT_AVAILABLE"
