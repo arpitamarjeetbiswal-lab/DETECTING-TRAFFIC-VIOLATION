@@ -1,3 +1,4 @@
+
 # Traffic Violation Detection
 
 A React dashboard and Flask service for image-based motorcycle, helmet, and number-plate analysis. OCR output is an estimate and must be reviewed before use.
