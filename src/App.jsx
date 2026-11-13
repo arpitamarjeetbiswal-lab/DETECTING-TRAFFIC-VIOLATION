@@ -54,99 +54,28 @@ function App() {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [analysisStatus, setAnalysisStatus] = useState("idle");
 
-  const [analysisHistory, setAnalysisHistory] = useState([
-    {
-      id: "D-2048",
-      fileName: "traffic_road_01.mp4",
-      type: "Video",
-      violations: "Helmet + Overspeed",
-      vehicles: 42,
-      violationCount: 8,
-      confidence: 95.8,
-      date: "15 Sep 2026",
-      time: "09:24 AM",
-      status: "Completed",
-    },
-    {
-      id: "D-2047",
-      fileName: "junction_camera_02.mp4",
-      type: "Video",
-      violations: "Triple Riding",
-      vehicles: 36,
-      violationCount: 5,
-      confidence: 93.6,
-      date: "15 Sep 2026",
-      time: "09:10 AM",
-      status: "Completed",
-    },
-    {
-      id: "D-2046",
-      fileName: "highway_sample.mp4",
-      type: "Video",
-      violations: "Overspeed",
-      vehicles: 58,
-      violationCount: 12,
-      confidence: 91.4,
-      date: "15 Sep 2026",
-      time: "08:52 AM",
-      status: "Completed",
-    },
-    {
-      id: "D-2045",
-      fileName: "traffic_image_04.jpg",
-      type: "Image",
-      violations: "No Helmet",
-      vehicles: 18,
-      violationCount: 4,
-      confidence: 96.2,
-      date: "14 Sep 2026",
-      time: "05:42 PM",
-      status: "Completed",
-    },
-    {
-      id: "D-2044",
-      fileName: "city_road_03.mp4",
-      type: "Video",
-      violations: "Multiple Violations",
-      vehicles: 71,
-      violationCount: 16,
-      confidence: 94.7,
-      date: "14 Sep 2026",
-      time: "04:18 PM",
-      status: "Completed",
-    },
-  ]);
+  const [analysisHistory, setAnalysisHistory] = useState(() => {
+    try {
+      const savedHistory = localStorage.getItem("trafficVisionAnalysisHistory");
+      return savedHistory ? JSON.parse(savedHistory) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(
+      "trafficVisionAnalysisHistory",
+      JSON.stringify(analysisHistory)
+    );
+  }, [analysisHistory]);
 
   const defaultNotifications = [
     {
-      id: 1,
-      title: "Analysis Completed",
-      message: "traffic_road_01.mp4 analysis completed successfully.",
-      time: "2 min ago",
-      type: "success",
-      read: false,
-    },
-    {
-      id: 2,
-      title: "Violation Detected",
-      message: "New helmet violation detected by AI engine.",
-      time: "8 min ago",
-      type: "warning",
-      read: false,
-    },
-    {
-      id: 3,
-      title: "Camera Connected",
-      message: "Traffic Camera CAM-01 is now online.",
-      time: "15 min ago",
-      type: "info",
-      read: true,
-    },
-    {
-      id: 4,
+      id: "system-ready",
       title: "System Ready",
-      message: "AI detection engine is ready for analysis.",
-      time: "32 min ago",
+      message: "Image analysis is ready.",
+      time: "Now",
       type: "info",
       read: true,
     },
@@ -157,9 +86,20 @@ function App() {
       "trafficVisionNotifications"
     );
 
-    return savedNotifications
-      ? JSON.parse(savedNotifications)
-      : defaultNotifications;
+    if (!savedNotifications) {
+      return defaultNotifications;
+    }
+
+    try {
+      const parsedNotifications = JSON.parse(savedNotifications);
+      return Array.isArray(parsedNotifications)
+        ? parsedNotifications.filter(
+            (item) => ![1, 2, 3, 4].includes(item.id)
+          )
+        : defaultNotifications;
+    } catch {
+      return defaultNotifications;
+    }
   });
   useEffect(() => {
     localStorage.setItem(
@@ -277,14 +217,19 @@ function App() {
         return <Violations />;
 
       case "analytics":
-        return <Analytics />;
+        return <Analytics analysisHistory={analysisHistory} />;
 
       case "history":
         return <DetectionHistory analysisHistory={analysisHistory} />;
 
       case "dashboard":
       default:
-        return <Dashboard setActivePage={setActivePage} />;
+        return (
+          <Dashboard
+            setActivePage={setActivePage}
+            analysisHistory={analysisHistory}
+          />
+        );
     }
   };
 

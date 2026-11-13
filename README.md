@@ -9,10 +9,16 @@ A React dashboard and Flask service for image-based motorcycle, helmet, and numb
 - Detect motorcycles, people, helmet status, and number plates.
 - Estimate rider counts per motorcycle and flag possible triple riding for review.
 - Associate plate detections with motorcycles when the overlap is clear.
-- Save no-helmet violations and a confidently associated plate number to SQLite; otherwise save `NOT_AVAILABLE`.
+- Count and save a no-helmet violation only when its detection is associated with a motorcycle; otherwise show it as an unmatched alert for review.
+- Save possible triple-riding cases as review items in SQLite, with a matched plate when available.
 - Display plate text, confidence, and review status in the upload results.
+- Report analysis time in the results; EasyOCR uses CUDA when available and falls back to CPU if GPU initialization fails.
+- Skip OCR for detected plates that do not clearly overlap a detected motorcycle.
+- Keep image-analysis summaries in the browser and confirmed or reviewable violation records in SQLite.
 
 Detection quality depends on image resolution, camera angle, lighting, and model training. Small or unclear plates may be reported as unreadable or incorrect; review all results.
+
+This prototype accepts still images only. Video, live camera analysis, and overspeed detection are not implemented; overspeed is shown as `N/A`.
 
 ## Requirements
 
@@ -51,6 +57,8 @@ python ai\scripts\flask_api.py
 ```
 
 The API listens at `http://127.0.0.1:5000`. The first OCR run may download EasyOCR language data.
+
+To force EasyOCR to use the CPU, set `$env:EASYOCR_GPU = "0"` in PowerShell before starting Flask.
 
 ### 3. Start the frontend
 

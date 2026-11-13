@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 
 function TrafficMonitoring({
@@ -18,14 +17,10 @@ function TrafficMonitoring({
     const url = URL.createObjectURL(selectedFile);
     setPreviewUrl(url);
 
-    return () => URL.revokeObjectURL(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
   }, [selectedFile]);
-
-  const isVideo = selectedFile?.type?.startsWith("video/");
-
-  const plateResults = Array.isArray(analysisResult?.plateResults)
-    ? analysisResult.plateResults
-    : [];
 
   const getEngineStatus = () => {
     if (analysisStatus === "processing") return "Processing";
@@ -33,23 +28,15 @@ function TrafficMonitoring({
     return "Ready";
   };
 
-  const formatStatus = (status) => {
-    return String(status || "Unknown")
-      .replaceAll("_", " ")
-      .replace(/\b\w/g, (char) => char.toUpperCase());
-  };
-
   return (
     <div className="page-content monitoring-page">
-
-      {/* HEADER */}
+      {/* Header */}
       <div className="page-header">
         <div>
           <span className="page-label">AI MONITORING</span>
           <h1>Traffic Monitoring</h1>
           <p>
-            Monitor uploaded media and review AI-powered traffic detection
-            results.
+            Review analyzed traffic images and their AI detection results.
           </p>
         </div>
 
@@ -67,51 +54,42 @@ function TrafficMonitoring({
         </div>
       </div>
 
-      {/* MAIN WORKSPACE */}
+      {/* Main Monitoring Area */}
       <div className="monitoring-workspace">
-
-        {/* MEDIA PREVIEW */}
+        {/* Media Preview */}
         <div className="media-preview-panel">
           <div className="panel-header">
             <div>
               <span className="page-label">MEDIA PREVIEW</span>
-              <h3>Analyse Media</h3>
+              <h3>Uploaded Image Preview</h3>
             </div>
 
             {selectedFile && (
-              <span className="media-type">
-                {isVideo ? "VIDEO" : "IMAGE"}
-              </span>
+              <span className="media-type">IMAGE</span>
             )}
           </div>
 
           <div className="monitoring-preview">
             {selectedFile && previewUrl ? (
-              isVideo ? (
-                <video
-                  src={previewUrl}
-                  controls
-                  className="monitoring-video"
-                />
-              ) : (
-                <img
-                  src={previewUrl}
-                  alt="Traffic preview"
-                  className="monitoring-image"
-                />
-              )
+              <img
+                src={previewUrl}
+                alt="Uploaded traffic image preview"
+                className="monitoring-image"
+              />
             ) : (
               <div className="media-placeholder">
                 <div className="placeholder-icon">◉</div>
-                <h3>No media selected</h3>
-                <p>Upload an image to start traffic monitoring.</p>
+                <h3>No image selected</h3>
+                <p>
+                  Upload a still image to start traffic analysis.
+                </p>
 
                 <button
                   type="button"
                   className="upload-media-btn"
                   onClick={() => setActivePage("upload")}
                 >
-                  Upload Media →
+                  Upload Image →
                 </button>
               </div>
             )}
@@ -130,29 +108,14 @@ function TrafficMonitoring({
                 type="button"
                 onClick={() => setActivePage("upload")}
               >
-                Change Media
+                Change Image
               </button>
             </div>
           )}
-
-          {/* ANNOTATED AI IMAGE */}
-          {analysisStatus === "completed" &&
-            analysisResult?.annotatedImageUrl && (
-              <div className="monitoring-annotated">
-                <span className="page-label">AI DETECTION OUTPUT</span>
-                <h3>Processed Traffic Image</h3>
-
-                <img
-                  src={analysisResult.annotatedImageUrl}
-                  alt="AI detected traffic"
-                />
-              </div>
-            )}
         </div>
 
-        {/* ANALYSIS INFORMATION */}
+        {/* Analysis Information */}
         <div className="analysis-info-panel">
-
           <div className="panel-header">
             <div>
               <span className="page-label">ANALYSIS</span>
@@ -172,41 +135,58 @@ function TrafficMonitoring({
             </span>
           </div>
 
-          {/* METRICS */}
           <div className="monitoring-metrics">
             <div className="monitoring-metric">
-              <span>Vehicles</span>
+              <span>Motorcycles</span>
               <strong>
-                {analysisResult?.vehicles ?? "--"}
+                {analysisResult ? analysisResult.vehicles : "--"}
               </strong>
             </div>
 
             <div className="monitoring-metric">
-              <span>Violations</span>
+              <span>Confirmed Violations</span>
               <strong>
-                {analysisResult?.violations ?? "--"}
+                {analysisResult ? analysisResult.violations : "--"}
               </strong>
             </div>
 
             <div className="monitoring-metric">
               <span>Confidence</span>
               <strong>
-                {analysisResult?.confidence != null
-                  ? `${analysisResult.confidence}%`
+                {analysisResult
+                  ? analysisResult.confidence == null
+                    ? "N/A"
+                    : `${analysisResult.confidence}%`
                   : "--"}
               </strong>
             </div>
           </div>
 
-          {/* ACTIVE MODELS */}
+          {/* Detection Models */}
           <div className="active-models">
-            <h4>Active Detection Models</h4>
+            <h4>Image Analysis Components</h4>
 
             <div className="model-list">
               <div className="model">
                 <div>
+                  <strong>Motorcycle and Person Detection</strong>
+                  <span>Finds motorcycles and people in the image</span>
+                </div>
+                <span className="model-status">Active</span>
+              </div>
+
+              <div className="model">
+                <div>
                   <strong>Helmet Detection</strong>
-                  <span>Detects riders without helmets</span>
+                  <span>Detects visible helmet status</span>
+                </div>
+                <span className="model-status">Active</span>
+              </div>
+
+              <div className="model">
+                <div>
+                  <strong>Number Plate OCR</strong>
+                  <span>Reads plates when the image is clear enough</span>
                 </div>
                 <span className="model-status">Active</span>
               </div>
@@ -214,22 +194,22 @@ function TrafficMonitoring({
               <div className="model">
                 <div>
                   <strong>Triple Riding</strong>
-                  <span>Detects multiple riders on two-wheelers</span>
+                  <span>Possible cases are flagged for review</span>
                 </div>
-                <span className="model-status">Active</span>
+                <span className="model-status">Review alert</span>
               </div>
 
               <div className="model">
                 <div>
-                  <strong>Number Plate Recognition</strong>
-                  <span>YOLO plate detection and OCR recognition</span>
+                  <strong>Overspeed Detection</strong>
+                  <span>Not implemented in this image-only prototype</span>
                 </div>
-                <span className="model-status">Active</span>
+                <span className="model-status">N/A</span>
               </div>
             </div>
           </div>
 
-          {/* VIOLATION RESULTS */}
+          {/* Results */}
           {analysisStatus === "completed" && analysisResult && (
             <div className="monitoring-results">
               <div className="result-heading">
@@ -239,140 +219,22 @@ function TrafficMonitoring({
 
               <div className="monitoring-violation">
                 <span>No Helmet</span>
-                <strong>{analysisResult.helmet ?? 0}</strong>
+                <strong>{analysisResult.helmet}</strong>
               </div>
 
               <div className="monitoring-violation">
-                <span>Triple Riding</span>
-                <strong>{analysisResult.tripleRiding ?? 0}</strong>
+                <span>Overspeed</span>
+                <strong>{analysisResult.overspeed ?? "N/A"}</strong>
+              </div>
+
+              <div className="monitoring-violation">
+                <span>Possible Triple Riding · Review</span>
+                <strong>{analysisResult.tripleRiding}</strong>
               </div>
             </div>
           )}
 
-          {/* NUMBER PLATE RECOGNITION */}
-          {analysisStatus === "completed" && analysisResult && (
-            <div className="number-plate-section">
-
-              <div className="number-plate-header">
-                <div>
-                  <span className="page-label">OCR DETECTION</span>
-                  <h3>Number Plate Recognition</h3>
-                </div>
-
-                <span className="plate-count">
-                  {plateResults.length} Detected
-                </span>
-              </div>
-
-              {plateResults.length === 0 ? (
-                <div className="no-plates">
-                  <div className="no-plates-icon">▤</div>
-                  <strong>No Number Plates Detected</strong>
-                  <p>
-                    The AI engine did not detect any readable number plates
-                    in this image.
-                  </p>
-                </div>
-              ) : (
-                <div className="number-plate-list">
-
-                  {plateResults.map((plate, index) => {
-                    const confidence = Number(plate.ocr_confidence);
-
-                    const hasConfidence =
-                      plate.ocr_confidence !== null &&
-                      plate.ocr_confidence !== undefined &&
-                      Number.isFinite(confidence);
-
-                    const isRecognized = Boolean(
-                      plate.plate_number &&
-                      plate.status !== "unreadable"
-                    );
-
-                    return (
-                      <div
-                        className="number-plate-card"
-                        key={`${plate.box?.join("-") || "plate"}-${index}`}
-                      >
-
-                        <div className="plate-card-top">
-                          <span className="plate-index">
-                            PLATE {String(index + 1).padStart(2, "0")}
-                          </span>
-
-                          <span
-                            className={`plate-status ${
-                              isRecognized ? "recognized" : "unreadable"
-                            }`}
-                          >
-                            {isRecognized ? "Recognized" : "Unreadable"}
-                          </span>
-                        </div>
-
-                        <div className="plate-number-box">
-                          <span className="plate-country">IND</span>
-                          <strong>
-                            {plate.plate_number || "NOT READABLE"}
-                          </strong>
-                        </div>
-
-                        <div className="plate-details">
-
-                          <div className="plate-detail">
-                            <span>Vehicle Association</span>
-                            <strong>
-                              {plate.motorcycle_index != null
-                                ? `Bike ${plate.motorcycle_index}`
-                                : "Unmatched"}
-                            </strong>
-                          </div>
-
-                          <div className="plate-detail">
-                            <span>OCR Confidence</span>
-                            <strong>
-                              {hasConfidence
-                                ? `${(confidence * 100).toFixed(1)}%`
-                                : "N/A"}
-                            </strong>
-                          </div>
-
-                          <div className="plate-detail">
-                            <span>Detection Status</span>
-                            <strong>{formatStatus(plate.status)}</strong>
-                          </div>
-
-                        </div>
-
-                        {hasConfidence && (
-                          <div className="plate-confidence-track">
-                            <div
-                              className="plate-confidence-fill"
-                              style={{
-                                width: `${Math.max(
-                                  0,
-                                  Math.min(100, confidence * 100)
-                                )}%`,
-                              }}
-                            />
-                          </div>
-                        )}
-
-                      </div>
-                    );
-                  })}
-
-                </div>
-              )}
-
-              <p className="plate-disclaimer">
-                OCR results are AI-generated estimates. Verify the plate
-                text before using it for official identification.
-              </p>
-
-            </div>
-          )}
-
-          {/* PROCESSING */}
+          {/* Processing */}
           {analysisStatus === "processing" && (
             <div className="monitoring-processing">
               <span className="analysis-spinner"></span>
@@ -380,16 +242,15 @@ function TrafficMonitoring({
               <div>
                 <strong>AI Processing</strong>
                 <p>
-                  Detecting vehicles, traffic violations and number plates...
+                  Detecting motorcycles, people, helmet status, and plates...
                 </p>
               </div>
             </div>
           )}
-
         </div>
       </div>
 
-      {/* PIPELINE */}
+      {/* Pipeline */}
       <div className="analysis-pipeline">
         <div className="pipeline-header">
           <div>
@@ -399,12 +260,11 @@ function TrafficMonitoring({
         </div>
 
         <div className="pipeline-steps">
-
           <div className="pipeline-step">
             <span>01</span>
             <div>
-              <strong>Upload Media</strong>
-              <p>Image input</p>
+              <strong>Upload Image</strong>
+              <p>Still image input</p>
             </div>
           </div>
 
@@ -414,7 +274,7 @@ function TrafficMonitoring({
             <span>02</span>
             <div>
               <strong>AI Processing</strong>
-              <p>Analyze traffic media</p>
+              <p>Analyze the uploaded image</p>
             </div>
           </div>
 
@@ -423,8 +283,8 @@ function TrafficMonitoring({
           <div className="pipeline-step">
             <span>03</span>
             <div>
-              <strong>Detection & OCR</strong>
-              <p>Identify vehicles and plates</p>
+              <strong>Detection and OCR</strong>
+              <p>Identify violations and read clear plates</p>
             </div>
           </div>
 
@@ -437,19 +297,17 @@ function TrafficMonitoring({
               <p>Prepare analytics</p>
             </div>
           </div>
-
         </div>
       </div>
 
-      {/* ACTIONS */}
+      {/* Actions */}
       <div className="monitoring-actions">
-
         <button
           type="button"
           className="secondary-action"
           onClick={() => setActivePage("upload")}
         >
-          Analyze New Media
+          Analyze New Image
         </button>
 
         {analysisStatus === "completed" && (
@@ -461,9 +319,7 @@ function TrafficMonitoring({
             View Detection History →
           </button>
         )}
-
       </div>
-
     </div>
   );
 }

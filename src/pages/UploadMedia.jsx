@@ -93,6 +93,7 @@ function UploadMedia({
       fileInputRef.current.value = "";
     }
   };
+
   // ==========================================
   // REAL AI ANALYSIS
   // ==========================================
@@ -147,7 +148,8 @@ function UploadMedia({
 
       const helmetViolations = detections.filter(
         (item) =>
-          item.violation_type === "Without Helmet"
+          item.violation_type === "Without Helmet" &&
+          item.violation_confirmed !== false
       ).length;
 
       // Average confidence of helmet-model detections.
@@ -164,8 +166,9 @@ function UploadMedia({
         // Motorcycle count from the general YOLO model.
         vehicles: data.motorcycles_detected ?? null,
 
-        // Combined helmet + triple-riding violations.
-        violations: data.total_violations ?? 0,
+        // Count only confirmed violations; possible triple riding needs review.
+        violations:
+          data.confirmed_violations ?? data.total_violations ?? 0,
 
         confidence:
           averageConfidence === null
@@ -177,6 +180,12 @@ function UploadMedia({
 
         // Overspeed detection is not implemented yet.
         overspeed: null,
+
+        processingTimeSeconds: Number.isFinite(
+          data.processing_time_seconds
+        )
+          ? data.processing_time_seconds
+          : null,
 
         tripleRiding: data.triple_riding ?? 0,
 
@@ -214,12 +223,12 @@ function UploadMedia({
 
       const violationLabel =
         result.helmet > 0 && result.tripleRiding > 0
-          ? "No Helmet + Triple Riding"
+              ? "No Helmet + Possible Triple Riding"
           : result.helmet > 0
             ? "No Helmet"
             : result.tripleRiding > 0
-              ? "Triple Riding"
-              : "No Helmet or Triple Riding Detected";
+              ? "Possible Triple Riding"
+          : "No Confirmed Violation";
 
       const newHistoryRecord = {
         id: `D-${Date.now()}`,
@@ -536,6 +545,12 @@ function UploadMedia({
 
               </div>
 
+              {analysisResult.processingTimeSeconds != null && (
+                <small>
+                  Analysis completed in {analysisResult.processingTimeSeconds}s
+                </small>
+              )}
+
               {/* RESULT STATISTICS */}
               <div className="result-stats">
 
@@ -548,7 +563,7 @@ function UploadMedia({
                 </div>
 
                 <div className="result-stat">
-                  <span>Total Violations</span>
+                  <span>Confirmed Violations</span>
 
                   <strong>
                     {analysisResult.violations}
@@ -579,7 +594,15 @@ function UploadMedia({
                 </div>
 
                 <div className="violation-result">
-                  <span>Triple Riding</span>
+                  <span>Overspeed</span>
+
+                  <strong>
+                    {analysisResult.overspeed ?? "N/A"}
+                  </strong>
+                </div>
+
+                <div className="violation-result">
+                  <span>Potential Triple Riding · Review</span>
 
                   <strong>
                     {analysisResult.tripleRiding}
@@ -598,8 +621,8 @@ function UploadMedia({
                   <h3>AI Detection Image</h3>
 
                   <p>
-                    Red: Violation | Green: Helmet /
-                    Motorcycle | Blue: Detected Person
+                    Red: Confirmed violation | Orange: Unmatched alert |
+                    Green: Helmet / Motorcycle | Blue: Detected Person
                   </p>
 
                   <img
@@ -681,7 +704,10 @@ function UploadMedia({
                     >
 
                       <span>
-                        {plate.plate_number || "Unreadable plate"}
+                        {plate.plate_number ||
+                          (plate.status === "OCR_SKIPPED_UNMATCHED"
+                            ? "Plate detected; OCR skipped"
+                            : "Unreadable plate")}
                       </span>
 
                       <strong>
@@ -699,8 +725,8 @@ function UploadMedia({
                 )}
 
                 <small>
-                  Plate text is an OCR estimate. Review it before using it
-                  to identify a vehicle.
+                  OCR text is an estimate. Unmatched plates may skip OCR;
+                  review any plate text before using it to identify a vehicle.
                 </small>
 
               </div>
@@ -728,8 +754,13 @@ function UploadMedia({
                       >
 
                         <span>
-                          {detection.violation_type}
-                          {detection.number_plate
+                          {detection.violation_type === "Without Helmet" &&
+                          detection.violation_confirmed === false
+                            ? "Possible Without Helmet · Motorcycle not matched"
+                            : detection.violation_type}
+                          {detection.violation_confirmed === false
+                            ? ""
+                            : detection.number_plate
                             ? ` · Bike ${detection.motorcycle_index} · Plate ${detection.number_plate}`
                             : detection.violation_type === "Without Helmet"
                               ? " · Plate not confidently matched"
@@ -777,7 +808,7 @@ function UploadMedia({
                 AI ENGINE
               </span>
 
-             <p>Detection Models</p>
+              <h3>Detection Models</h3>
             </div>
 
             <span className="ai-ready">
@@ -821,6 +852,25 @@ function UploadMedia({
 
             <span className="model-status">
               ✓
+            </span>
+
+          </div>
+
+          {/* OVERSPEED */}
+          <div className="detection-model">
+
+            <div>
+              <strong>
+                Overspeed
+              </strong>
+
+              <span>
+                Backend integration pending
+              </span>
+            </div>
+
+            <span className="model-status">
+              —
             </span>
 
           </div>
