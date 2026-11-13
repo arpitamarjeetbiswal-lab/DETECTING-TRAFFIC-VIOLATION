@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { classifyViolationRecord } from "../utils/violationRecords";
 
 const API_URL = "http://127.0.0.1:5000";
 
@@ -23,16 +24,19 @@ function Violations() {
   }, []);
 
   const filteredRecords = useMemo(() => records.filter((item) => {
+    const flags = classifyViolationRecord(item);
     const type = item.violation_type || "Unknown";
-    const matchesType = typeFilter === "All" || type === typeFilter;
+    const matchesType = typeFilter === "All"
+      || (typeFilter === "NO HELMET" && flags.hasNoHelmet)
+      || (typeFilter === "POSSIBLE TRIPLE RIDING" && flags.hasTripleRiding);
     const search = searchTerm.trim().toLowerCase();
     const matchesSearch = !search || [item.id, item.bike_id, item.number_plate, item.image_path, type]
       .some((value) => String(value ?? "").toLowerCase().includes(search));
     return matchesType && matchesSearch;
   }), [records, typeFilter, searchTerm]);
 
-  const helmetCount = records.filter((item) => item.violation_type === "NO HELMET").length;
-  const reviewCount = records.filter((item) => item.violation_type === "POSSIBLE TRIPLE RIDING").length;
+  const helmetCount = records.filter((item) => classifyViolationRecord(item).hasNoHelmet).length;
+  const reviewCount = records.filter((item) => classifyViolationRecord(item).hasTripleRiding).length;
 
   return (
     <div className="page-content violations-page">
@@ -46,8 +50,8 @@ function Violations() {
 
       <div className="violation-summary">
         <div className="violation-summary-card"><span>Saved Records</span><strong>{records.length}</strong></div>
-        <div className="violation-summary-card"><span>Confirmed No Helmet</span><strong>{helmetCount}</strong></div>
-        <div className="violation-summary-card"><span>Triple Riding · Review</span><strong>{reviewCount}</strong></div>
+        <div className="violation-summary-card"><span>No-Helmet Records</span><strong>{helmetCount}</strong></div>
+        <div className="violation-summary-card"><span>Triple-Riding Reviews · incl. legacy</span><strong>{reviewCount}</strong></div>
         <div className="violation-summary-card"><span>Overspeed</span><strong>N/A</strong></div>
       </div>
 
@@ -69,11 +73,11 @@ function Violations() {
             <tbody>
               {loadError ? <tr><td colSpan="6"><div className="violations-empty"><strong>{loadError}</strong><p>Make sure the Flask API is running, then refresh this page.</p></div></td></tr>
                 : filteredRecords.length ? filteredRecords.map((item) => {
-                  const isReview = item.violation_type === "POSSIBLE TRIPLE RIDING";
+                  const recordType = classifyViolationRecord(item);
                   return <tr key={item.id}>
                     <td><span className="violation-id">{item.id}</span></td>
                     <td><strong className="vehicle-name">{item.bike_id == null ? "N/A" : `Bike ${item.bike_id}`}</strong></td>
-                    <td><span className="violation-type">{isReview ? "POSSIBLE TRIPLE RIDING · REVIEW" : item.violation_type}</span></td>
+                    <td><span className="violation-type">{recordType.displayType}</span></td>
                     <td>{item.number_plate && item.number_plate !== "NOT_AVAILABLE" ? item.number_plate : "Unreadable / unavailable"}</td>
                     <td>{item.image_path?.split(/[\\/]/).pop() || "—"}</td>
                     <td><span className="violation-time">{item.timestamp || "—"}</span></td>

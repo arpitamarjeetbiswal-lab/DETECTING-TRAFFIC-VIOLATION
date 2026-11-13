@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { classifyViolationRecord } from "../utils/violationRecords";
 
 const API_URL = "http://127.0.0.1:5000";
 
@@ -33,11 +34,11 @@ function Dashboard({ setActivePage, analysisHistory = [] }) {
     }, []);
 
     const summary = useMemo(() => {
-        const confirmedHelmet = savedViolations.filter(
-            (item) => item.violation_type === "NO HELMET"
+        const noHelmetRecords = savedViolations.filter(
+            (item) => classifyViolationRecord(item).hasNoHelmet
         ).length;
         const tripleReview = savedViolations.filter(
-            (item) => item.violation_type === "POSSIBLE TRIPLE RIDING"
+            (item) => classifyViolationRecord(item).hasTripleRiding
         ).length;
         const platesAvailable = savedViolations.filter(
             (item) => item.number_plate && item.number_plate !== "NOT_AVAILABLE"
@@ -52,7 +53,7 @@ function Dashboard({ setActivePage, analysisHistory = [] }) {
         ).size;
 
         return {
-            confirmedHelmet,
+            noHelmetRecords,
             tripleReview,
             platesAvailable,
             imagesWithSavedViolations,
@@ -96,8 +97,8 @@ function Dashboard({ setActivePage, analysisHistory = [] }) {
                 </div>
 
                 <div className="stat-card">
-                    <span className="stat-label">Confirmed No-Helmet Records</span>
-                    <h2>{summary.confirmedHelmet}</h2>
+                    <span className="stat-label">No-Helmet Records</span>
+                    <h2>{summary.noHelmetRecords}</h2>
                     <span className="stat-change">Saved to the database</span>
                 </div>
 
@@ -146,7 +147,7 @@ function Dashboard({ setActivePage, analysisHistory = [] }) {
                                 <tbody>
                                     {recentViolations.map((item) => (
                                         <tr key={item.id}>
-                                            <td>{item.violation_type}</td>
+                                            <td>{classifyViolationRecord(item).displayType}</td>
                                             <td>{item.bike_id == null ? "N/A" : `Bike ${item.bike_id}`}</td>
                                             <td>
                                                 {item.number_plate === "NOT_AVAILABLE"
@@ -174,17 +175,17 @@ function Dashboard({ setActivePage, analysisHistory = [] }) {
                     <div className="violation-item">
                         <span className="violation-icon helmet">H</span>
                         <div>
-                            <strong>Confirmed no helmet</strong>
-                            <small>Saved violations</small>
+                            <strong>No-helmet records</strong>
+                            <small>Includes legacy combined entries</small>
                         </div>
-                        <b>{summary.confirmedHelmet}</b>
+                        <b>{summary.noHelmetRecords}</b>
                     </div>
 
                     <div className="violation-item">
                         <span className="violation-icon triple">R</span>
                         <div>
                             <strong>Possible triple riding</strong>
-                            <small>Review alerts</small>
+                            <small>Includes legacy combined entries</small>
                         </div>
                         <b>{summary.tripleReview}</b>
                     </div>
