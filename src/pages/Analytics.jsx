@@ -40,26 +40,9 @@ function Analytics() {
     { name: "Other", value: 32 },
   ];
 
-  const confidenceData = [
-    { day: "Mon", confidence: 91 },
-    { day: "Tue", confidence: 93 },
-    { day: "Wed", confidence: 92 },
-    { day: "Thu", confidence: 95 },
-    { day: "Fri", confidence: 94 },
-    { day: "Sat", confidence: 96 },
-    { day: "Sun", confidence: 95 },
-  ];
 
-  const trafficHours = [
-    { time: "8 AM", vehicles: 420 },
-    { time: "9 AM", vehicles: 680 },
-    { time: "10 AM", vehicles: 540 },
-    { time: "12 PM", vehicles: 390 },
-    { time: "2 PM", vehicles: 470 },
-    { time: "5 PM", vehicles: 720 },
-    { time: "6 PM", vehicles: 810 },
-    { time: "7 PM", vehicles: 650 },
-  ];
+
+ 
 
   return (
     <div className="page-content analytics-page">
@@ -97,18 +80,6 @@ function Analytics() {
           <span>Total Violations</span>
           <strong>132</strong>
           <small>Detected by AI</small>
-        </div>
-
-        <div className="analytics-summary-card">
-          <span>Detection Confidence</span>
-          <strong>94%</strong>
-          <small>Average AI confidence</small>
-        </div>
-
-        <div className="analytics-summary-card">
-          <span>Peak Traffic</span>
-          <strong>6 PM</strong>
-          <small>810 vehicles detected</small>
         </div>
 
       </div>
