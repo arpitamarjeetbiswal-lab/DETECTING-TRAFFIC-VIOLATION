@@ -22,8 +22,6 @@ function TrafficMonitoring({
     };
   }, [selectedFile]);
 
-  const isVideo = selectedFile?.type?.startsWith("video/");
-
   const getEngineStatus = () => {
     if (analysisStatus === "processing") return "Processing";
     if (analysisStatus === "completed") return "Analysis Complete";
@@ -38,8 +36,7 @@ function TrafficMonitoring({
           <span className="page-label">AI MONITORING</span>
           <h1>Traffic Monitoring</h1>
           <p>
-            Monitor uploaded media and review AI-powered traffic detection
-            results.
+            Review analyzed traffic images and their AI detection results.
           </p>
         </div>
 
@@ -64,37 +61,27 @@ function TrafficMonitoring({
           <div className="panel-header">
             <div>
               <span className="page-label">MEDIA PREVIEW</span>
-              <h3>Traffic Camera Feed</h3>
+              <h3>Uploaded Image Preview</h3>
             </div>
 
             {selectedFile && (
-              <span className="media-type">
-                {isVideo ? "VIDEO" : "IMAGE"}
-              </span>
+              <span className="media-type">IMAGE</span>
             )}
           </div>
 
           <div className="monitoring-preview">
             {selectedFile && previewUrl ? (
-              isVideo ? (
-                <video
-                  src={previewUrl}
-                  controls
-                  className="monitoring-video"
-                />
-              ) : (
-                <img
-                  src={previewUrl}
-                  alt="Traffic preview"
-                  className="monitoring-image"
-                />
-              )
+              <img
+                src={previewUrl}
+                alt="Uploaded traffic image preview"
+                className="monitoring-image"
+              />
             ) : (
               <div className="media-placeholder">
                 <div className="placeholder-icon">◉</div>
-                <h3>No media selected</h3>
+                <h3>No image selected</h3>
                 <p>
-                  Upload an image or video to start traffic monitoring.
+                  Upload a still image to start traffic analysis.
                 </p>
 
                 <button
@@ -102,7 +89,7 @@ function TrafficMonitoring({
                   className="upload-media-btn"
                   onClick={() => setActivePage("upload")}
                 >
-                  Upload Media →
+                  Upload Image →
                 </button>
               </div>
             )}
@@ -121,7 +108,7 @@ function TrafficMonitoring({
                 type="button"
                 onClick={() => setActivePage("upload")}
               >
-                Change Media
+                Change Image
               </button>
             </div>
           )}
@@ -150,14 +137,14 @@ function TrafficMonitoring({
 
           <div className="monitoring-metrics">
             <div className="monitoring-metric">
-              <span>Vehicles</span>
+              <span>Motorcycles</span>
               <strong>
                 {analysisResult ? analysisResult.vehicles : "--"}
               </strong>
             </div>
 
             <div className="monitoring-metric">
-              <span>Violations</span>
+              <span>Confirmed Violations</span>
               <strong>
                 {analysisResult ? analysisResult.violations : "--"}
               </strong>
@@ -167,7 +154,9 @@ function TrafficMonitoring({
               <span>Confidence</span>
               <strong>
                 {analysisResult
-                  ? `${analysisResult.confidence}%`
+                  ? analysisResult.confidence == null
+                    ? "N/A"
+                    : `${analysisResult.confidence}%`
                   : "--"}
               </strong>
             </div>
@@ -175,13 +164,29 @@ function TrafficMonitoring({
 
           {/* Detection Models */}
           <div className="active-models">
-            <h4>Active Detection Models</h4>
+            <h4>Image Analysis Components</h4>
 
             <div className="model-list">
               <div className="model">
                 <div>
+                  <strong>Motorcycle and Person Detection</strong>
+                  <span>Finds motorcycles and people in the image</span>
+                </div>
+                <span className="model-status">Active</span>
+              </div>
+
+              <div className="model">
+                <div>
                   <strong>Helmet Detection</strong>
-                  <span>Detects riders without helmets</span>
+                  <span>Detects visible helmet status</span>
+                </div>
+                <span className="model-status">Active</span>
+              </div>
+
+              <div className="model">
+                <div>
+                  <strong>Number Plate OCR</strong>
+                  <span>Reads plates when the image is clear enough</span>
                 </div>
                 <span className="model-status">Active</span>
               </div>
@@ -189,17 +194,17 @@ function TrafficMonitoring({
               <div className="model">
                 <div>
                   <strong>Triple Riding</strong>
-                  <span>Detects multiple riders on two-wheelers</span>
+                  <span>Possible cases are flagged for review</span>
                 </div>
-                <span className="model-status">Active</span>
+                <span className="model-status">Review alert</span>
               </div>
 
               <div className="model">
                 <div>
                   <strong>Overspeed Detection</strong>
-                  <span>Identifies vehicles exceeding speed limits</span>
+                  <span>Not implemented in this image-only prototype</span>
                 </div>
-                <span className="model-status">Active</span>
+                <span className="model-status">N/A</span>
               </div>
             </div>
           </div>
@@ -219,11 +224,11 @@ function TrafficMonitoring({
 
               <div className="monitoring-violation">
                 <span>Overspeed</span>
-                <strong>{analysisResult.overspeed}</strong>
+                <strong>{analysisResult.overspeed ?? "N/A"}</strong>
               </div>
 
               <div className="monitoring-violation">
-                <span>Triple Riding</span>
+                <span>Possible Triple Riding · Review</span>
                 <strong>{analysisResult.tripleRiding}</strong>
               </div>
             </div>
@@ -237,7 +242,7 @@ function TrafficMonitoring({
               <div>
                 <strong>AI Processing</strong>
                 <p>
-                  Detecting vehicles and traffic violations...
+                  Detecting motorcycles, people, helmet status, and plates...
                 </p>
               </div>
             </div>
@@ -258,8 +263,8 @@ function TrafficMonitoring({
           <div className="pipeline-step">
             <span>01</span>
             <div>
-              <strong>Upload Media</strong>
-              <p>Image or video input</p>
+              <strong>Upload Image</strong>
+              <p>Still image input</p>
             </div>
           </div>
 
@@ -269,7 +274,7 @@ function TrafficMonitoring({
             <span>02</span>
             <div>
               <strong>AI Processing</strong>
-              <p>Analyze traffic media</p>
+              <p>Analyze the uploaded image</p>
             </div>
           </div>
 
@@ -278,8 +283,8 @@ function TrafficMonitoring({
           <div className="pipeline-step">
             <span>03</span>
             <div>
-              <strong>Violation Detection</strong>
-              <p>Identify violations</p>
+              <strong>Detection and OCR</strong>
+              <p>Identify violations and read clear plates</p>
             </div>
           </div>
 
@@ -302,7 +307,7 @@ function TrafficMonitoring({
           className="secondary-action"
           onClick={() => setActivePage("upload")}
         >
-          Analyze New Media
+          Analyze New Image
         </button>
 
         {analysisStatus === "completed" && (

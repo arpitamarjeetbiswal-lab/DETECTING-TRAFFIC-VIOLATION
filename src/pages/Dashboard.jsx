@@ -1,39 +1,76 @@
-import {
-    ResponsiveContainer,
-    AreaChart,
-    Area,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-} from "recharts";
+import { useEffect, useMemo, useState } from "react";
 
+const API_URL = "http://127.0.0.1:5000";
 
-import LiveTrafficPreview from "../components/LiveTrafficPreview";
+function fileNameFromPath(path) {
+    return path?.split(/[\\/]/).pop() || "Image";
+}
 
-const trafficData = [
-    { day: "Mon", vehicles: 820 },
-    { day: "Tue", vehicles: 1040 },
-    { day: "Wed", vehicles: 920 },
-    { day: "Thu", vehicles: 1280 },
-    { day: "Fri", vehicles: 1160 },
-    { day: "Sat", vehicles: 1420 },
-    { day: "Sun", vehicles: 1284 },
-];
+function Dashboard({ setActivePage, analysisHistory = [] }) {
+    const [savedViolations, setSavedViolations] = useState([]);
+    const [loadError, setLoadError] = useState("");
 
-function Dashboard({ setActivePage }) {
+    useEffect(() => {
+        const controller = new AbortController();
+
+        fetch(`${API_URL}/api/violations`, { signal: controller.signal })
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Could not load saved violation records.");
+                }
+                return response.json();
+            })
+            .then((records) => {
+                setSavedViolations(Array.isArray(records) ? records : []);
+            })
+            .catch((error) => {
+                if (error.name !== "AbortError") {
+                    setLoadError(error.message);
+                }
+            });
+
+        return () => controller.abort();
+    }, []);
+
+    const summary = useMemo(() => {
+        const confirmedHelmet = savedViolations.filter(
+            (item) => item.violation_type === "NO HELMET"
+        ).length;
+        const tripleReview = savedViolations.filter(
+            (item) => item.violation_type === "POSSIBLE TRIPLE RIDING"
+        ).length;
+        const platesAvailable = savedViolations.filter(
+            (item) => item.number_plate && item.number_plate !== "NOT_AVAILABLE"
+        ).length;
+        const imagesWithSavedViolations = new Set(
+            savedViolations.map((item) => item.image_path).filter(Boolean)
+        ).size;
+        const bikesWithSavedViolations = new Set(
+            savedViolations
+                .filter((item) => item.image_path && item.bike_id != null)
+                .map((item) => `${item.image_path}:${item.bike_id}`)
+        ).size;
+
+        return {
+            confirmedHelmet,
+            tripleReview,
+            platesAvailable,
+            imagesWithSavedViolations,
+            bikesWithSavedViolations,
+        };
+    }, [savedViolations]);
+
+    const recentAnalyses = analysisHistory.slice(0, 5);
+    const recentViolations = savedViolations.slice(0, 5);
+
     return (
         <main className="dashboard">
-
-            {/* Page Heading */}
             <div className="page-heading">
                 <div>
                     <p className="breadcrumb">Overview / Dashboard</p>
-
-                    <h1>Traffic Dashboard</h1>
-
+                    <h1>Image Analysis Dashboard</h1>
                     <p className="subtitle">
-                        Monitor traffic activity and AI-powered violations.
+                        Review uploaded image analyses and saved violation records.
                     </p>
                 </div>
 
@@ -41,197 +78,143 @@ function Dashboard({ setActivePage }) {
                     className="analyze-btn"
                     onClick={() => setActivePage("upload")}
                 >
-                    + Analyze Media
+                    + Analyze Image
                 </button>
             </div>
 
-            {/* Statistics */}
             <section className="stats-grid">
-
                 <div className="stat-card">
-                    <span className="stat-label">Vehicles Detected</span>
-                    <h2>1,284</h2>
-                    <span className="stat-change">↑ 12.5% today</span>
+                    <span className="stat-label">Images with Saved Violations</span>
+                    <h2>{summary.imagesWithSavedViolations}</h2>
+                    <span className="stat-change">Unique uploaded images in the database</span>
                 </div>
 
                 <div className="stat-card">
-                    <span className="stat-label">Total Violations</span>
-                    <h2>186</h2>
-                    <span className="stat-change">↑ 8.2% today</span>
+                    <span className="stat-label">Bikes Linked to Saved Violations</span>
+                    <h2>{summary.bikesWithSavedViolations}</h2>
+                    <span className="stat-change">Unique image and bike pairs</span>
                 </div>
 
                 <div className="stat-card">
-                    <span className="stat-label">Helmet Violations</span>
-                    <h2>74</h2>
-                    <span className="stat-change">5.8% of vehicles</span>
+                    <span className="stat-label">Confirmed No-Helmet Records</span>
+                    <h2>{summary.confirmedHelmet}</h2>
+                    <span className="stat-change">Saved to the database</span>
                 </div>
 
                 <div className="stat-card">
-                    <span className="stat-label">Overspeed Cases</span>
-                    <h2>42</h2>
-                    <span className="stat-change">3.2% of vehicles</span>
+                    <span className="stat-label">Possible Triple-Riding Reviews</span>
+                    <h2>{summary.tripleReview}</h2>
+                    <span className="stat-change">Needs human review</span>
                 </div>
-
             </section>
 
-            {/* Live Traffic Monitoring */}
-            <LiveTrafficPreview />
-
-            {/* Charts */}
             <section className="dashboard-grid">
-
-                {/* Traffic Activity */}
                 <div className="panel traffic-panel">
-
                     <div className="panel-header">
                         <div>
-                            <h3>Traffic Activity</h3>
-                            <p>Vehicle detections over the last 7 days</p>
+                            <h3>Recent Violation Records</h3>
+                            <p>Latest records saved by image analysis</p>
                         </div>
-
-                        <select defaultValue="7">
-                            <option value="7">Last 7 Days</option>
-                            <option value="30">Last 30 Days</option>
-                        </select>
+                        <button
+                            className="view-btn"
+                            onClick={() => setActivePage("history")}
+                        >
+                            View History
+                        </button>
                     </div>
 
-                    <div className="real-chart">
-                        <ResponsiveContainer width="100%" height={250}>
-                            <AreaChart data={trafficData}>
-
-                                <defs>
-                                    <linearGradient
-                                        id="trafficGradient"
-                                        x1="0"
-                                        y1="0"
-                                        x2="0"
-                                        y2="1"
-                                    >
-                                        <stop
-                                            offset="5%"
-                                            stopColor="#3b82f6"
-                                            stopOpacity={0.3}
-                                        />
-
-                                        <stop
-                                            offset="95%"
-                                            stopColor="#3b82f6"
-                                            stopOpacity={0}
-                                        />
-                                    </linearGradient>
-                                </defs>
-
-                                <CartesianGrid
-                                    stroke="#1f2937"
-                                    strokeDasharray="3 3"
-                                    vertical={false}
-                                />
-
-                                <XAxis
-                                    dataKey="day"
-                                    stroke="#64748b"
-                                    tickLine={false}
-                                    axisLine={false}
-                                    fontSize={10}
-                                />
-
-                                <YAxis
-                                    stroke="#64748b"
-                                    tickLine={false}
-                                    axisLine={false}
-                                    fontSize={10}
-                                />
-
-                                <Tooltip
-                                    contentStyle={{
-                                        background: "#111827",
-                                        border: "1px solid #334155",
-                                        borderRadius: "8px",
-                                        color: "#fff",
-                                    }}
-                                />
-
-                                <Area
-                                    type="monotone"
-                                    dataKey="vehicles"
-                                    stroke="#3b82f6"
-                                    strokeWidth={2}
-                                    fill="url(#trafficGradient)"
-                                />
-
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-
+                    {loadError ? (
+                        <p className="dashboard-empty" role="alert">
+                            {loadError} Check that the Flask API is running.
+                        </p>
+                    ) : recentViolations.length === 0 ? (
+                        <p className="dashboard-empty">
+                            No saved violations yet. Analyze an image to begin.
+                        </p>
+                    ) : (
+                        <div className="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Violation</th>
+                                        <th>Bike</th>
+                                        <th>Number Plate</th>
+                                        <th>Image</th>
+                                        <th>Date &amp; Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {recentViolations.map((item) => (
+                                        <tr key={item.id}>
+                                            <td>{item.violation_type}</td>
+                                            <td>{item.bike_id == null ? "N/A" : `Bike ${item.bike_id}`}</td>
+                                            <td>
+                                                {item.number_plate === "NOT_AVAILABLE"
+                                                    ? "Unreadable / unavailable"
+                                                    : item.number_plate || "Unreadable / unavailable"}
+                                            </td>
+                                            <td>{fileNameFromPath(item.image_path)}</td>
+                                            <td>{item.timestamp || "N/A"}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
 
-                {/* Violations */}
                 <div className="panel violations-panel">
-
                     <div className="panel-header">
                         <div>
-                            <h3>Violations</h3>
-                            <p>Today's breakdown</p>
+                            <h3>Saved Record Summary</h3>
+                            <p>Based on records returned by Flask</p>
                         </div>
                     </div>
 
                     <div className="violation-item">
                         <span className="violation-icon helmet">H</span>
-
                         <div>
-                            <strong>No Helmet</strong>
-                            <small>74 cases</small>
+                            <strong>Confirmed no helmet</strong>
+                            <small>Saved violations</small>
                         </div>
-
-                        <b>40%</b>
+                        <b>{summary.confirmedHelmet}</b>
                     </div>
 
                     <div className="violation-item">
-                        <span className="violation-icon triple">T</span>
-
+                        <span className="violation-icon triple">R</span>
                         <div>
-                            <strong>Triple Riding</strong>
-                            <small>38 cases</small>
+                            <strong>Possible triple riding</strong>
+                            <small>Review alerts</small>
                         </div>
+                        <b>{summary.tripleReview}</b>
+                    </div>
 
-                        <b>20%</b>
+                    <div className="violation-item">
+                        <span className="violation-icon other">P</span>
+                        <div>
+                            <strong>Records with a plate</strong>
+                            <small>Plate text is still an OCR estimate</small>
+                        </div>
+                        <b>{summary.platesAvailable}</b>
                     </div>
 
                     <div className="violation-item">
                         <span className="violation-icon speed">S</span>
-
                         <div>
-                            <strong>Overspeed</strong>
-                            <small>42 cases</small>
+                            <strong>Overspeed detection</strong>
+                            <small>Not implemented</small>
                         </div>
-
-                        <b>23%</b>
+                        <b>N/A</b>
                     </div>
-
-                    <div className="violation-item">
-                        <span className="violation-icon other">O</span>
-
-                        <div>
-                            <strong>Other Violations</strong>
-                            <small>32 cases</small>
-                        </div>
-
-                        <b>17%</b>
-                    </div>
-
                 </div>
-
             </section>
 
-            {/* Recent Detections */}
-            <section className="panel recent-panel">
-
+            {recentAnalyses.length > 0 && <section className="panel recent-panel">
                 <div className="panel-header">
                     <div>
-                        <h3>Recent Detections</h3>
-                        <p>Latest AI analysis results</p>
+                        <h3>Recent Image Analyses</h3>
+                        <p>Saved on this browser and device</p>
                     </div>
-
                     <button
                         className="view-btn"
                         onClick={() => setActivePage("history")}
@@ -240,82 +223,37 @@ function Dashboard({ setActivePage }) {
                     </button>
                 </div>
 
-                <div className="table-wrapper">
-
-                    <table>
-
-                        <thead>
-                            <tr>
-                                <th>Detection</th>
-                                <th>Violation</th>
-                                <th>Confidence</th>
-                                <th>Time</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-
-                            <tr>
-                                <td>Vehicle #1024</td>
-                                <td>No Helmet</td>
-                                <td>96.4%</td>
-                                <td>09:24 AM</td>
-
-                                <td>
-                                    <span className="badge danger">
-                                        Detected
-                                    </span>
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td>Vehicle #1021</td>
-                                <td>Overspeed</td>
-                                <td>93.8%</td>
-                                <td>09:18 AM</td>
-
-                                <td>
-                                    <span className="badge danger">
-                                        Detected
-                                    </span>
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td>Vehicle #1017</td>
-                                <td>Triple Riding</td>
-                                <td>91.2%</td>
-                                <td>09:11 AM</td>
-
-                                <td>
-                                    <span className="badge warning">
-                                        Review
-                                    </span>
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td>Vehicle #1013</td>
-                                <td>No Violation</td>
-                                <td>98.1%</td>
-                                <td>08:56 AM</td>
-
-                                <td>
-                                    <span className="badge success">
-                                        Clear
-                                    </span>
-                                </td>
-                            </tr>
-
-                        </tbody>
-
-                    </table>
-
-                </div>
-
-            </section>
-
+                {recentAnalyses.length === 0 ? (
+                    <p className="dashboard-empty">
+                        No image analyses saved on this device yet.
+                    </p>
+                ) : (
+                    <div className="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Image</th>
+                                    <th>Result</th>
+                                    <th>Motorcycles</th>
+                                    <th>Confirmed Violations</th>
+                                    <th>Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {recentAnalyses.map((item) => (
+                                    <tr key={item.id}>
+                                        <td>{item.fileName}</td>
+                                        <td>{item.violations}</td>
+                                        <td>{item.vehicles ?? "N/A"}</td>
+                                        <td>{item.violationCount}</td>
+                                        <td>{item.date} {item.time}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </section>}
         </main>
     );
 }

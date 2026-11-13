@@ -1,8 +1,10 @@
 from pathlib import Path
+import os
 import re
 
 import cv2
 import easyocr
+import torch
 from ultralytics import YOLO
 
 # =====================================================
@@ -61,7 +63,23 @@ def get_ocr_reader():
     global _ocr_reader
 
     if _ocr_reader is None:
-        _ocr_reader = easyocr.Reader(["en"], gpu=False)
+        gpu_setting = os.getenv("EASYOCR_GPU", "auto").strip().lower()
+        use_gpu = (
+            gpu_setting not in {"0", "false", "no", "off", "cpu"}
+            and torch.cuda.is_available()
+        )
+
+        try:
+            _ocr_reader = easyocr.Reader(["en"], gpu=use_gpu)
+        except Exception as error:
+            if not use_gpu:
+                raise
+
+            print(
+                "EasyOCR GPU initialization failed; falling back to CPU:",
+                error
+            )
+            _ocr_reader = easyocr.Reader(["en"], gpu=False)
 
     return _ocr_reader
 
@@ -173,6 +191,30 @@ def read_plate(crop):
     if PLATE_PATTERN.fullmatch(text):
         return text, confidence
 
+    # Retry malformed reads on a contrast-enhanced grayscale crop.
+    # Keep the raw read unless the alternate pass matches a known format.
+    grayscale = (
+        cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        if crop.ndim == 3
+        else crop
+    )
+    enhanced = cv2.createCLAHE(
+        clipLimit=2.0,
+        tileGridSize=(8, 8)
+    ).apply(grayscale)
+
+    enhanced_text, enhanced_confidence = read_text_region(
+        reader,
+        enhanced,
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    )
+
+    if PLATE_PATTERN.fullmatch(enhanced_text):
+        return enhanced_text, enhanced_confidence
+
+    if enhanced_confidence > confidence:
+        text, confidence = enhanced_text, enhanced_confidence
+
     # Some plates place four small registration digits in a narrow
     # left column and the three-letter prefix plus serial on the right.
     # Read those regions separately so the small country/date markings
@@ -215,12 +257,28 @@ def read_plate(crop):
     return text, confidence
 
 
+def plate_matches_motorcycle(plate_box, motorcycle_boxes, minimum_overlap=0.5):
+
+    px1, py1, px2, py2 = plate_box
+    plate_area = max(1, px2 - px1) * max(1, py2 - py1)
+
+    for motorcycle_box in motorcycle_boxes:
+        bx1, by1, bx2, by2 = motorcycle_box
+        overlap_width = max(0, min(px2, bx2) - max(px1, bx1))
+        overlap_height = max(0, min(py2, by2) - max(py1, by1))
+
+        if (overlap_width * overlap_height) / plate_area >= minimum_overlap:
+            return True
+
+    return False
+
+
 # =====================================================
 # 6. DETECT PLATES AND READ TEXT
 # =====================================================
 
 
-def detect_and_read_plates(image):
+def detect_and_read_plates(image, motorcycle_boxes=None):
 
     if image is None:
         raise ValueError("Invalid image received.")
@@ -262,11 +320,24 @@ def detect_and_read_plates(image):
 
         crop = image[y1:y2, x1:x2]
 
-        plate_number, ocr_confidence = read_plate(crop)
+        should_read = (
+            motorcycle_boxes is None
+            or plate_matches_motorcycle(
+                (x1, y1, x2, y2),
+                motorcycle_boxes
+            )
+        )
+
+        if should_read:
+            plate_number, ocr_confidence = read_plate(crop)
+        else:
+            plate_number, ocr_confidence = "", None
 
         detection_confidence = float(box.conf[0])
 
-        if PLATE_PATTERN.fullmatch(plate_number):
+        if not should_read:
+            status = "OCR_SKIPPED_UNMATCHED"
+        elif PLATE_PATTERN.fullmatch(plate_number):
 
             if ocr_confidence >= OCR_MIN_CONFIDENCE:
                 status = "REVIEW_REQUIRED"
@@ -280,7 +351,11 @@ def detect_and_read_plates(image):
             {
                 "plate_number": plate_number,
                 "detection_confidence": round(detection_confidence, 4),
-                "ocr_confidence": round(ocr_confidence, 4),
+                "ocr_confidence": (
+                    round(ocr_confidence, 4)
+                    if ocr_confidence is not None
+                    else None
+                ),
                 "status": status,
                 "box": [x1, y1, x2, y2],
             }

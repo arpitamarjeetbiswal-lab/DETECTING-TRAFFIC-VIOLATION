@@ -1,297 +1,88 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+const API_URL = "http://127.0.0.1:5000";
 
 function Violations() {
+  const [records, setRecords] = useState([]);
+  const [loadError, setLoadError] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
-  const [severityFilter, setSeverityFilter] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
 
-  const violationsData = [
-    {
-      id: "V-1024",
-      vehicle: "Vehicle #1024",
-      type: "No Helmet",
-      confidence: 96.4,
-      time: "09:24 AM",
-      severity: "High",
-      status: "Detected",
-    },
-    {
-      id: "V-1021",
-      vehicle: "Vehicle #1021",
-      type: "Overspeed",
-      confidence: 93.8,
-      time: "09:18 AM",
-      severity: "High",
-      status: "Detected",
-    },
-    {
-      id: "V-1017",
-      vehicle: "Vehicle #1017",
-      type: "Triple Riding",
-      confidence: 91.2,
-      time: "09:11 AM",
-      severity: "Medium",
-      status: "Review",
-    },
-    {
-      id: "V-1013",
-      vehicle: "Vehicle #1013",
-      type: "No Helmet",
-      confidence: 95.1,
-      time: "08:56 AM",
-      severity: "High",
-      status: "Detected",
-    },
-    {
-      id: "V-1008",
-      vehicle: "Vehicle #1008",
-      type: "Overspeed",
-      confidence: 89.7,
-      time: "08:42 AM",
-      severity: "Medium",
-      status: "Review",
-    },
-  ];
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${API_URL}/api/violations`, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Could not load saved records.");
+        return response.json();
+      })
+      .then((data) => setRecords(Array.isArray(data) ? data : []))
+      .catch((error) => {
+        if (error.name !== "AbortError") setLoadError(error.message);
+      });
+    return () => controller.abort();
+  }, []);
 
-  const filteredViolations = useMemo(() => {
-    return violationsData.filter((item) => {
-      const matchesType =
-        typeFilter === "All" || item.type === typeFilter;
+  const filteredRecords = useMemo(() => records.filter((item) => {
+    const type = item.violation_type || "Unknown";
+    const matchesType = typeFilter === "All" || type === typeFilter;
+    const search = searchTerm.trim().toLowerCase();
+    const matchesSearch = !search || [item.id, item.bike_id, item.number_plate, item.image_path, type]
+      .some((value) => String(value ?? "").toLowerCase().includes(search));
+    return matchesType && matchesSearch;
+  }), [records, typeFilter, searchTerm]);
 
-      const matchesSeverity =
-        severityFilter === "All" ||
-        item.severity === severityFilter;
-
-      const search = searchTerm.toLowerCase();
-
-      const matchesSearch =
-        item.id.toLowerCase().includes(search) ||
-        item.vehicle.toLowerCase().includes(search) ||
-        item.type.toLowerCase().includes(search);
-
-      return matchesType && matchesSeverity && matchesSearch;
-    });
-  }, [typeFilter, severityFilter, searchTerm]);
-
-  const totalViolations = violationsData.length;
-
-  const highSeverity = violationsData.filter(
-    (item) => item.severity === "High"
-  ).length;
-
-  const underReview = violationsData.filter(
-    (item) => item.status === "Review"
-  ).length;
-
-  const resolved = violationsData.filter(
-    (item) => item.status === "Resolved"
-  ).length;
+  const helmetCount = records.filter((item) => item.violation_type === "NO HELMET").length;
+  const reviewCount = records.filter((item) => item.violation_type === "POSSIBLE TRIPLE RIDING").length;
 
   return (
     <div className="page-content violations-page">
-      {/* Header */}
       <div className="page-header">
         <div>
-          <span className="page-label">TRAFFIC VIOLATIONS</span>
-
+          <span className="page-label">SAVED IMAGE ANALYSIS RECORDS</span>
           <h1>Violations</h1>
-
-          <p>
-            Review and manage AI-detected traffic violations.
-          </p>
+          <p>Confirmed no-helmet records and possible triple-riding alerts saved by the image analysis.</p>
         </div>
       </div>
 
-      {/* Summary */}
       <div className="violation-summary">
-        <div className="violation-summary-card">
-          <span>Total Violations</span>
-          <strong>{totalViolations}</strong>
-        </div>
-
-        <div className="violation-summary-card">
-          <span>High Severity</span>
-          <strong>{highSeverity}</strong>
-        </div>
-
-        <div className="violation-summary-card">
-          <span>Under Review</span>
-          <strong>{underReview}</strong>
-        </div>
-
-        <div className="violation-summary-card">
-          <span>Resolved</span>
-          <strong>{resolved}</strong>
-        </div>
+        <div className="violation-summary-card"><span>Saved Records</span><strong>{records.length}</strong></div>
+        <div className="violation-summary-card"><span>Confirmed No Helmet</span><strong>{helmetCount}</strong></div>
+        <div className="violation-summary-card"><span>Triple Riding · Review</span><strong>{reviewCount}</strong></div>
+        <div className="violation-summary-card"><span>Overspeed</span><strong>N/A</strong></div>
       </div>
 
-      {/* Main Panel */}
       <div className="violations-panel">
-        {/* Toolbar */}
         <div className="violations-toolbar">
-          <div>
-            <span className="page-label">DETECTION RECORDS</span>
-
-            <h3>Recent Violations</h3>
-          </div>
-
+          <div><span className="page-label">FROM THE LOCAL DATABASE</span><h3>Saved Violation Records</h3></div>
           <div className="violations-controls">
-            {/* Search */}
-            <div className="violation-search">
-              <span>⌕</span>
-
-              <input
-                type="text"
-                placeholder="Search violations..."
-                value={searchTerm}
-                onChange={(e) =>
-                  setSearchTerm(e.target.value)
-                }
-              />
-            </div>
-
-            {/* Type */}
-            <select
-              value={typeFilter}
-              onChange={(e) =>
-                setTypeFilter(e.target.value)
-              }
-            >
-              <option value="All">All Types</option>
-              <option value="No Helmet">No Helmet</option>
-              <option value="Overspeed">Overspeed</option>
-              <option value="Triple Riding">
-                Triple Riding
-              </option>
-            </select>
-
-            {/* Severity */}
-            <select
-              value={severityFilter}
-              onChange={(e) =>
-                setSeverityFilter(e.target.value)
-              }
-            >
-              <option value="All">All Severity</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
+            <div className="violation-search"><span>⌕</span><input type="search" placeholder="Search plate, bike, image..." value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} /></div>
+            <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+              <option value="All">All record types</option>
+              <option value="NO HELMET">No Helmet</option>
+              <option value="POSSIBLE TRIPLE RIDING">Triple Riding · Review</option>
             </select>
           </div>
         </div>
-
-        {/* Table */}
         <div className="violations-table-wrapper">
           <table className="violations-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Vehicle</th>
-                <th>Violation Type</th>
-                <th>Confidence</th>
-                <th>Time</th>
-                <th>Severity</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-
+            <thead><tr><th>ID</th><th>Bike</th><th>Record Type</th><th>Number Plate</th><th>Image</th><th>Date &amp; Time</th></tr></thead>
             <tbody>
-              {filteredViolations.length > 0 ? (
-                filteredViolations.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <span className="violation-id">
-                        {item.id}
-                      </span>
-                    </td>
-
-                    <td>
-                      <strong className="vehicle-name">
-                        {item.vehicle}
-                      </strong>
-                    </td>
-
-                    <td>
-                      <span className="violation-type">
-                        {item.type}
-                      </span>
-                    </td>
-
-                    <td>
-                      <span className="violation-confidence">
-                        {item.confidence}%
-                      </span>
-                    </td>
-
-                    <td>
-                      <span className="violation-time">
-                        {item.time}
-                      </span>
-                    </td>
-
-                    <td>
-                      <span
-                        className={`severity-badge ${item.severity.toLowerCase()}`}
-                      >
-                        {item.severity}
-                      </span>
-                    </td>
-
-                    <td>
-                      <span
-                        className={`violation-status ${item.status.toLowerCase()}`}
-                      >
-                        <span className="violation-status-dot"></span>
-
-                        {item.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="7">
-                    <div className="violations-empty">
-                      <div className="violations-empty-icon">
-                        ✓
-                      </div>
-
-                      <strong>No violations found</strong>
-
-                      <p>
-                        Try changing your search or filters.
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              )}
+              {loadError ? <tr><td colSpan="6"><div className="violations-empty"><strong>{loadError}</strong><p>Make sure the Flask API is running, then refresh this page.</p></div></td></tr>
+                : filteredRecords.length ? filteredRecords.map((item) => {
+                  const isReview = item.violation_type === "POSSIBLE TRIPLE RIDING";
+                  return <tr key={item.id}>
+                    <td><span className="violation-id">{item.id}</span></td>
+                    <td><strong className="vehicle-name">{item.bike_id == null ? "N/A" : `Bike ${item.bike_id}`}</strong></td>
+                    <td><span className="violation-type">{isReview ? "POSSIBLE TRIPLE RIDING · REVIEW" : item.violation_type}</span></td>
+                    <td>{item.number_plate && item.number_plate !== "NOT_AVAILABLE" ? item.number_plate : "Unreadable / unavailable"}</td>
+                    <td>{item.image_path?.split(/[\\/]/).pop() || "—"}</td>
+                    <td><span className="violation-time">{item.timestamp || "—"}</span></td>
+                  </tr>;
+                }) : <tr><td colSpan="6"><div className="violations-empty"><strong>{records.length ? "No records match these filters" : "No saved records yet"}</strong><p>{records.length ? "Try another search or record type." : "Analyze an image to create database records."}</p></div></td></tr>}
             </tbody>
           </table>
         </div>
-
-        {/* Footer */}
-        <div className="violations-footer">
-          <span>
-            Showing{" "}
-            <strong>{filteredViolations.length}</strong>{" "}
-            of <strong>{violationsData.length}</strong>{" "}
-            violations
-          </span>
-
-          <div className="violations-pagination">
-            <button type="button" disabled>
-              ←
-            </button>
-
-            <span className="violations-page-active">
-              1
-            </span>
-
-            <button type="button" disabled>
-              →
-            </button>
-          </div>
-        </div>
+        <div className="violations-footer"><span>Showing <strong>{filteredRecords.length}</strong> of <strong>{records.length}</strong> saved records</span></div>
       </div>
     </div>
   );

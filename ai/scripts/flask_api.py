@@ -2,6 +2,7 @@ from uuid import uuid4
 from datetime import datetime
 from pathlib import Path
 import sqlite3
+from time import perf_counter
 
 from plate_ocr_service import detect_and_read_plates
 
@@ -288,6 +289,8 @@ def analyze_image():
             "error": "Invalid or unreadable image"
         }), 400
 
+    analysis_started_at = perf_counter()
+
     # Work on a copy for drawing.
     annotated_image = original_image.copy()
 
@@ -336,52 +339,19 @@ def analyze_image():
         )
 
         if is_violation:
-
-            helmet_violations += 1
-
             helmet_violation_candidates.append({
                 "box": (x1, y1, x2, y2),
                 "detection_index": len(detections)
             })
-
-            # Red (OpenCV uses BGR).
-            color = (0, 0, 255)
-
-        else:
-
-            # Green.
-            color = (0, 255, 0)
-
-        # Draw helmet detection box.
-        cv2.rectangle(
-            annotated_image,
-            (x1, y1),
-            (x2, y2),
-            color,
-            2
-        )
-
-        label = (
-            f"{class_name} "
-            f"{confidence * 100:.1f}%"
-        )
-
-        cv2.putText(
-            annotated_image,
-            label,
-            (x1, max(20, y1 - 8)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            color,
-            2
-        )
 
         detections.append({
             "violation_type": class_name,
             "confidence": round(
                 confidence * 100,
                 2
-            )
+            ),
+            "box": [x1, y1, x2, y2],
+            "violation_confirmed": None if not is_violation else False
         })
 
     # ======================================
@@ -436,7 +406,11 @@ def analyze_image():
     # ======================================
 
     plate_results = detect_and_read_plates(
-        original_image
+        original_image,
+        motorcycle_boxes=[
+            motorcycle["box"]
+            for motorcycle in motorcycles
+        ]
     )
 
     # ======================================
@@ -554,6 +528,32 @@ def analyze_image():
             else "UNMATCHED"
         )
 
+    # Store possible triple-riding cases for review, not as confirmed guilt.
+    for bike in bike_results:
+
+        if bike["status"] != "Needs Review":
+            continue
+
+        bike_plates = [
+            plate
+            for plate in plate_results
+            if (
+                plate["motorcycle_index"] == bike["bike_index"]
+                and plate["status"] == "REVIEW_REQUIRED"
+                and plate["plate_number"]
+            )
+        ]
+
+        database_records.append((
+            bike["bike_index"],
+            "POSSIBLE TRIPLE RIDING",
+            timestamp,
+            str(file_path),
+            bike_plates[0]["plate_number"]
+            if len(bike_plates) == 1
+            else "NOT_AVAILABLE"
+        ))
+
     # Associate each no-helmet head detection with its rider and then
     # with that motorcycle's sole readable plate, when unambiguous.
     for candidate in helmet_violation_candidates:
@@ -581,8 +581,11 @@ def analyze_image():
             else None
         )
 
+        violation_confirmed = motorcycle_index is not None
+
         detections[candidate["detection_index"]].update({
             "motorcycle_index": motorcycle_index,
+            "violation_confirmed": violation_confirmed,
             "number_plate": (
                 associated_plate["plate_number"]
                 if associated_plate
@@ -595,17 +598,53 @@ def analyze_image():
             )
         })
 
-        database_records.append((
-            None,
-            "NO HELMET",
-            timestamp,
-            str(file_path),
-            (
-                associated_plate["plate_number"]
-                if associated_plate
-                else "NOT_AVAILABLE"
-            )
-        ))
+        if violation_confirmed:
+            helmet_violations += 1
+            database_records.append((
+                motorcycle_index,
+                "NO HELMET",
+                timestamp,
+                str(file_path),
+                (
+                    associated_plate["plate_number"]
+                    if associated_plate
+                    else "NOT_AVAILABLE"
+                )
+            ))
+
+    # Draw helmet detections after rider-to-bike association so that
+    # unassociated alerts are visibly marked for review, not as confirmed.
+    for detection in detections:
+
+        x1, y1, x2, y2 = detection["box"]
+        is_no_helmet = detection["violation_type"] == "Without Helmet"
+
+        if is_no_helmet and detection["violation_confirmed"]:
+            color = (0, 0, 255)
+            label = "NO HELMET"
+        elif is_no_helmet:
+            color = (0, 165, 255)
+            label = "REVIEW: BIKE NOT MATCHED"
+        else:
+            color = (0, 255, 0)
+            label = detection["violation_type"]
+
+        cv2.rectangle(
+            annotated_image,
+            (x1, y1),
+            (x2, y2),
+            color,
+            2
+        )
+        cv2.putText(
+            annotated_image,
+            f"{label} {detection['confidence']:.1f}%",
+            (x1, max(20, y1 - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            color,
+            2
+        )
 
     # ======================================
     # 5. DRAW MOTORCYCLE BOXES
@@ -743,9 +782,15 @@ def analyze_image():
     # 10. RETURN RESULTS TO REACT
     # ======================================
 
-    total_violations = (
-        helmet_violations
-        + triple_riding_count
+    confirmed_violations = helmet_violations
+    review_alerts = triple_riding_count
+    processing_time_seconds = round(
+        perf_counter() - analysis_started_at,
+        2
+    )
+
+    print(
+        f"Image analysis completed in {processing_time_seconds:.2f}s"
     )
 
     return jsonify({
@@ -780,7 +825,14 @@ def analyze_image():
 
         "bike_results": bike_results,
 
-        "total_violations": total_violations,
+        "confirmed_violations": confirmed_violations,
+
+        "review_alerts": review_alerts,
+
+        # Keep the legacy field, now limited to confirmed violations.
+        "total_violations": confirmed_violations,
+
+        "processing_time_seconds": processing_time_seconds,
 
         "annotated_image_url": (
             f"/api/annotated/{annotated_filename}"
@@ -807,5 +859,6 @@ if __name__ == "__main__":
     app.run(
         host="127.0.0.1",
         port=5000,
-        debug=True
+        debug=True,
+        use_reloader=False
     )

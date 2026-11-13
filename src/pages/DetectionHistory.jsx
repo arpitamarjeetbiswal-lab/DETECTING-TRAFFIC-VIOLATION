@@ -1,8 +1,34 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 function DetectionHistory({ analysisHistory = [] }) {
   const [statusFilter, setStatusFilter] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
+  const [savedViolations, setSavedViolations] = useState([]);
+  const [savedViolationsError, setSavedViolationsError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    fetch("http://127.0.0.1:5000/api/violations", {
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Could not load saved violations.");
+        }
+        return response.json();
+      })
+      .then((records) => {
+        setSavedViolations(Array.isArray(records) ? records : []);
+      })
+      .catch((error) => {
+        if (error.name !== "AbortError") {
+          setSavedViolationsError(error.message);
+        }
+      });
+
+    return () => controller.abort();
+  }, []);
 
   const filteredHistory = useMemo(() => {
     return analysisHistory.filter((item) => {
@@ -27,7 +53,7 @@ function DetectionHistory({ analysisHistory = [] }) {
   ).length;
 
   const vehiclesProcessed = analysisHistory.reduce(
-    (total, item) => total + item.vehicles,
+    (total, item) => total + (Number(item.vehicles) || 0),
     0
   );
 
@@ -159,7 +185,9 @@ function DetectionHistory({ analysisHistory = [] }) {
 
                     <td>
                       <span className="history-confidence">
-                        {item.confidence}%
+                        {item.confidence == null
+                          ? "N/A"
+                          : `${item.confidence}%`}
                       </span>
                     </td>
 
@@ -191,7 +219,8 @@ function DetectionHistory({ analysisHistory = [] }) {
                       <strong>No records found</strong>
 
                       <p>
-                        Try changing the search term or status filter.
+                        No image analyses have been saved yet, or the current
+                        search and status filters found no matches.
                       </p>
                     </div>
                   </td>
@@ -220,6 +249,50 @@ function DetectionHistory({ analysisHistory = [] }) {
             </button>
           </div>
         </div>
+      </div>
+
+      <div className="history-card">
+        <div className="history-toolbar">
+          <div>
+            <span className="page-label">SAVED IN DATABASE</span>
+            <h3>Violation Records</h3>
+          </div>
+        </div>
+
+        {savedViolationsError ? (
+          <p role="alert">{savedViolationsError} Check that the Flask API is running.</p>
+        ) : (
+          <div className="history-table-wrapper">
+            <table className="history-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Violation</th>
+                  <th>Bike</th>
+                  <th>Number Plate</th>
+                  <th>Image</th>
+                  <th>Date &amp; Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {savedViolations.length > 0 ? savedViolations.map((record) => (
+                  <tr key={record.id}>
+                    <td><span className="history-id">{record.id}</span></td>
+                    <td><span className="history-violation">{record.violation_type}</span></td>
+                    <td>{record.bike_id == null ? "N/A" : `Bike ${record.bike_id}`}</td>
+                    <td>{record.number_plate === "NOT_AVAILABLE" ? "Unreadable / unavailable" : record.number_plate}</td>
+                    <td>{record.image_path?.split(/[\\/]/).pop() || "N/A"}</td>
+                    <td>{record.timestamp || "N/A"}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan="6">No saved violation records.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
