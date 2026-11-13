@@ -18,7 +18,7 @@ function Violations() {
     {
       id: "V-1021",
       vehicle: "Vehicle #1021",
-      type: "Overspeed",
+      type: "No Helmet",
       confidence: 93.8,
       time: "09:18 AM",
       severity: "High",
@@ -45,7 +45,7 @@ function Violations() {
     {
       id: "V-1008",
       vehicle: "Vehicle #1008",
-      type: "Overspeed",
+      type: "Triple Riding",
       confidence: 89.7,
       time: "08:42 AM",
       severity: "Medium",
@@ -159,7 +159,6 @@ function Violations() {
             >
               <option value="All">All Types</option>
               <option value="No Helmet">No Helmet</option>
-              <option value="Overspeed">Overspeed</option>
               <option value="Triple Riding">
                 Triple Riding
               </option>

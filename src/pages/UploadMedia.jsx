@@ -93,7 +93,6 @@ function UploadMedia({
       fileInputRef.current.value = "";
     }
   };
-
   // ==========================================
   // REAL AI ANALYSIS
   // ==========================================
@@ -580,14 +579,6 @@ function UploadMedia({
                 </div>
 
                 <div className="violation-result">
-                  <span>Overspeed</span>
-
-                  <strong>
-                    {analysisResult.overspeed ?? "N/A"}
-                  </strong>
-                </div>
-
-                <div className="violation-result">
                   <span>Triple Riding</span>
 
                   <strong>
@@ -786,7 +777,7 @@ function UploadMedia({
                 AI ENGINE
               </span>
 
-              <h3>Detection Models</h3>
+             <p>Detection Models</p>
             </div>
 
             <span className="ai-ready">
@@ -830,25 +821,6 @@ function UploadMedia({
 
             <span className="model-status">
               ✓
-            </span>
-
-          </div>
-
-          {/* OVERSPEED */}
-          <div className="detection-model">
-
-            <div>
-              <strong>
-                Overspeed
-              </strong>
-
-              <span>
-                Backend integration pending
-              </span>
-            </div>
-
-            <span className="model-status">
-              —
             </span>
 
           </div>

@@ -1,25 +1,4 @@
-import {
-    ResponsiveContainer,
-    AreaChart,
-    Area,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-} from "recharts";
 
-
-import LiveTrafficPreview from "../components/LiveTrafficPreview";
-
-const trafficData = [
-    { day: "Mon", vehicles: 820 },
-    { day: "Tue", vehicles: 1040 },
-    { day: "Wed", vehicles: 920 },
-    { day: "Thu", vehicles: 1280 },
-    { day: "Fri", vehicles: 1160 },
-    { day: "Sat", vehicles: 1420 },
-    { day: "Sun", vehicles: 1284 },
-];
 
 function Dashboard({ setActivePage }) {
     return (
@@ -74,96 +53,8 @@ function Dashboard({ setActivePage }) {
 
             </section>
 
-            {/* Live Traffic Monitoring */}
-            <LiveTrafficPreview />
-
             {/* Charts */}
             <section className="dashboard-grid">
-
-                {/* Traffic Activity */}
-                <div className="panel traffic-panel">
-
-                    <div className="panel-header">
-                        <div>
-                            <h3>Traffic Activity</h3>
-                            <p>Vehicle detections over the last 7 days</p>
-                        </div>
-
-                        <select defaultValue="7">
-                            <option value="7">Last 7 Days</option>
-                            <option value="30">Last 30 Days</option>
-                        </select>
-                    </div>
-
-                    <div className="real-chart">
-                        <ResponsiveContainer width="100%" height={250}>
-                            <AreaChart data={trafficData}>
-
-                                <defs>
-                                    <linearGradient
-                                        id="trafficGradient"
-                                        x1="0"
-                                        y1="0"
-                                        x2="0"
-                                        y2="1"
-                                    >
-                                        <stop
-                                            offset="5%"
-                                            stopColor="#3b82f6"
-                                            stopOpacity={0.3}
-                                        />
-
-                                        <stop
-                                            offset="95%"
-                                            stopColor="#3b82f6"
-                                            stopOpacity={0}
-                                        />
-                                    </linearGradient>
-                                </defs>
-
-                                <CartesianGrid
-                                    stroke="#1f2937"
-                                    strokeDasharray="3 3"
-                                    vertical={false}
-                                />
-
-                                <XAxis
-                                    dataKey="day"
-                                    stroke="#64748b"
-                                    tickLine={false}
-                                    axisLine={false}
-                                    fontSize={10}
-                                />
-
-                                <YAxis
-                                    stroke="#64748b"
-                                    tickLine={false}
-                                    axisLine={false}
-                                    fontSize={10}
-                                />
-
-                                <Tooltip
-                                    contentStyle={{
-                                        background: "#111827",
-                                        border: "1px solid #334155",
-                                        borderRadius: "8px",
-                                        color: "#fff",
-                                    }}
-                                />
-
-                                <Area
-                                    type="monotone"
-                                    dataKey="vehicles"
-                                    stroke="#3b82f6"
-                                    strokeWidth={2}
-                                    fill="url(#trafficGradient)"
-                                />
-
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-
-                </div>
 
                 {/* Violations */}
                 <div className="panel violations-panel">
@@ -197,16 +88,7 @@ function Dashboard({ setActivePage }) {
                         <b>20%</b>
                     </div>
 
-                    <div className="violation-item">
-                        <span className="violation-icon speed">S</span>
-
-                        <div>
-                            <strong>Overspeed</strong>
-                            <small>42 cases</small>
-                        </div>
-
-                        <b>23%</b>
-                    </div>
+                    
 
                     <div className="violation-item">
                         <span className="violation-icon other">O</span>
@@ -271,7 +153,7 @@ function Dashboard({ setActivePage }) {
 
                             <tr>
                                 <td>Vehicle #1021</td>
-                                <td>Overspeed</td>
+                                <td>No Helmet</td>
                                 <td>93.8%</td>
                                 <td>09:18 AM</td>
 

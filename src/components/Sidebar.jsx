@@ -21,11 +21,6 @@ function Sidebar({ activePage, setActivePage }) {
       icon: "⚠",
     },
     {
-      id: "analytics",
-      label: "Analytics",
-      icon: "▥",
-    },
-    {
       id: "history",
       label: "Detection History",
       icon: "◷",
