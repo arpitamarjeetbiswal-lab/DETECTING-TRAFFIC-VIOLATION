@@ -209,6 +209,51 @@ def get_violations():
         conn.close()
 
 
+@app.route("/api/violations/<int:record_id>/review", methods=["PATCH"])
+def review_violation(record_id):
+    action = str((request.get_json(silent=True) or {}).get("action", "")).lower()
+    if action not in {"confirm", "dismiss"}:
+        return jsonify({"error": "Action must be 'confirm' or 'dismiss'."}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute(
+            "SELECT violation_type FROM violations WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        if row is None:
+            return jsonify({"error": "Violation record not found."}), 404
+
+        current_type = str(row[0] or "").strip().upper()
+        if "TRIPLE RIDING" not in current_type:
+            return jsonify({"error": "This record has no triple-riding review."}), 409
+        if "CONFIRMED" in current_type or "DISMISSED" in current_type:
+            return jsonify({"error": "This triple-riding alert was already reviewed."}), 409
+
+        if action == "confirm":
+            updated_type = (
+                "NO HELMET + TRIPLE RIDING CONFIRMED"
+                if "NO HELMET" in current_type
+                else "TRIPLE RIDING CONFIRMED"
+            )
+        else:
+            # Keep a separate no-helmet violation intact for combined legacy rows.
+            updated_type = (
+                "NO HELMET"
+                if "NO HELMET" in current_type
+                else "POSSIBLE TRIPLE RIDING DISMISSED"
+            )
+
+        conn.execute(
+            "UPDATE violations SET violation_type = ? WHERE id = ?",
+            (updated_type, record_id),
+        )
+        conn.commit()
+        return jsonify({"id": record_id, "violation_type": updated_type})
+    finally:
+        conn.close()
+
+
 # ==========================================
 # SERVE ANNOTATED IMAGES
 # ==========================================
@@ -421,73 +466,69 @@ def analyze_image():
     triple_riding_count = 0
     person_to_bike = {}
 
-    # Prevent one person being associated with multiple bikes.
-    assigned_persons = set()
+    # Score every person-bike pair first, then choose each person's best
+    # motorcycle. This avoids detector order assigning nearby pedestrians
+    # to the first bike in the list.
+    person_candidates = {}
+    for person_index, person in enumerate(persons):
+        px1, py1, px2, py2 = person["box"]
+        person_width = max(1, px2 - px1)
+        person_height = max(1, py2 - py1)
+        person_center_x = (px1 + px2) / 2
+        candidate_scores = []
 
-    for bike_index, motorcycle in enumerate(motorcycles, start=1):
+        for bike_index, motorcycle in enumerate(motorcycles, start=1):
+            bx1, by1, bx2, by2 = motorcycle["box"]
+            bike_width = max(1, bx2 - bx1)
+            bike_height = max(1, by2 - by1)
+            bike_center_x = (bx1 + bx2) / 2
+            overlap_x = max(0, min(px2, bx2) - max(px1, bx1))
+            overlap_ratio = overlap_x / person_width
+            center_distance = abs(person_center_x - bike_center_x) / bike_width
+            bottom_offset = abs(py2 - by2) / bike_height
 
-        bx1, by1, bx2, by2 = motorcycle["box"]
-
-        bike_width = max(1, bx2 - bx1)
-        bike_height = max(1, by2 - by1)
-        bike_center_x = (bx1 + bx2) / 2
-
-        associated_persons = []
-
-        for person_index, person in enumerate(persons):
-
-            if person_index in assigned_persons:
+            # Bodies should overlap the motorcycle horizontally and reach
+            # the motorcycle's lower half. The wider vertical window allows
+            # seated riders while rejecting distant people in the background.
+            if (
+                overlap_ratio < 0.30
+                or center_distance > 0.70
+                or py2 < by1 - bike_height * 0.35
+                or py2 > by2 + bike_height * 0.12
+                or person_height < bike_height * 0.35
+            ):
                 continue
 
-            px1, py1, px2, py2 = person["box"]
-
-            person_width = max(1, px2 - px1)
-            person_height = max(1, py2 - py1)
-
-            person_center_x = (px1 + px2) / 2
-            person_bottom_y = py2
-
-            # How much of the person's horizontal box
-            # overlaps with the motorcycle?
-            overlap_x = max(
-                0,
-                min(px2, bx2) - max(px1, bx1)
+            horizontal_score = min(1.0, overlap_ratio / 0.70)
+            center_score = max(0.0, 1.0 - center_distance / 0.70)
+            vertical_score = max(0.0, 1.0 - bottom_offset / 0.75)
+            score = (
+                0.45 * horizontal_score
+                + 0.35 * center_score
+                + 0.20 * vertical_score
             )
+            candidate_scores.append((score, bike_index))
 
-            overlap_ratio = overlap_x / person_width
-
-            # Person should be horizontally aligned
-            # with the motorcycle, not merely nearby.
-            horizontal_match = (
-                overlap_ratio >= 0.45
-                and abs(person_center_x - bike_center_x)
-                <= bike_width * 0.60
-            )
-
-            # The lower part of the person should be
-            # around the upper/middle motorcycle region.
-            vertical_match = (
-                by1 - bike_height * 0.65
-                <= person_bottom_y
-                <= by2 + bike_height * 0.05
-            )
-
-            # Reject people whose boxes are unusually
-            # small relative to the motorcycle.
-            size_match = (
-                person_height >= bike_height * 0.55
-            )
-
+        candidate_scores.sort(reverse=True)
+        if candidate_scores:
+            # If two motorcycles are equally plausible, leave the person
+            # unassigned so the app does not manufacture a review alert.
             if (
-                horizontal_match
-                and vertical_match
-                and size_match
+                len(candidate_scores) > 1
+                and candidate_scores[0][0] - candidate_scores[1][0] < 0.08
             ):
-                associated_persons.append(person_index)
+                continue
+            person_candidates[person_index] = candidate_scores[0][1]
 
-        for person_index in associated_persons:
-            assigned_persons.add(person_index)
-            person_to_bike[person_index] = bike_index
+    for person_index, bike_index in person_candidates.items():
+        person_to_bike[person_index] = bike_index
+
+    for bike_index, motorcycle in enumerate(motorcycles, start=1):
+        associated_persons = [
+            person_index
+            for person_index, assigned_bike in person_to_bike.items()
+            if assigned_bike == bike_index
+        ]
 
         person_count = len(associated_persons)
 
