@@ -12,6 +12,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
+import { classifyViolationRecord } from "../utils/violationRecords";
 
 const API_URL = "http://127.0.0.1:5000";
 const COLORS = ["#60a5fa", "#f59e0b"];
@@ -70,8 +71,8 @@ function Analytics({ analysisHistory = [] }) {
   }, [records]);
 
   const distribution = useMemo(() => [
-    { name: "Confirmed no helmet", value: records.filter((item) => item.violation_type === "NO HELMET").length },
-    { name: "Triple riding · review", value: records.filter((item) => item.violation_type === "POSSIBLE TRIPLE RIDING").length },
+    { name: "No-helmet records (incl. legacy)", value: records.filter((item) => classifyViolationRecord(item).hasNoHelmet).length },
+    { name: "Triple riding · review (incl. legacy)", value: records.filter((item) => classifyViolationRecord(item).hasTripleRiding).length },
   ].filter((item) => item.value > 0), [records]);
 
   return (
