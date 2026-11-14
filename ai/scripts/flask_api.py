@@ -322,6 +322,7 @@ def get_annotated_image(filename):
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze_image():
+    analysis_started_at = perf_counter()
 
     # --------------------------------------
     # CHECK UPLOADED FILE
@@ -508,58 +509,30 @@ def analyze_image():
     print("Motorcycles detected:", len(motorcycles))
     print("Persons detected:", len(persons))
 
+    # Plate OCR is part of image analysis. Keep it isolated so a missing or
+    # misconfigured OCR model does not abort helmet and rider analysis.
+    plate_ocr_error = None
+    try:
+        plate_results = detect_and_read_plates(
+            original_image,
+            motorcycle_boxes=[motorcycle["box"] for motorcycle in motorcycles],
+        )
+    except Exception as error:
+        plate_results = []
+        plate_ocr_error = str(error)
+        print("Plate OCR unavailable:", error)
+
     # ======================================
     # 3. TRIPLE-RIDING ASSOCIATION
     # ======================================
 
     bike_results = []
     triple_riding_count = 0
-
-    # A person is assigned to no more than one bike.
-    assigned_persons = set()
-
-    for bike_index, motorcycle in enumerate(
-        motorcycles,
-        start=1
-    ):
-
-        bx1, by1, bx2, by2 = motorcycle["box"]
-
-        bike_width = max(1, bx2 - bx1)
-        bike_height = max(1, by2 - by1)
-
-        bike_center_x = (bx1 + bx2) / 2
-
-        associated_persons = []
-        association_debug = []
-
-        for person_index, person in enumerate(persons):
-
-            if person_index in assigned_persons:
-                continue
-
-            px1, py1, px2, py2 = person["box"]
-
-            person_width = max(1, px2 - px1)
-            person_height = max(1, py2 - py1)
-
-            person_center_x = (px1 + px2) / 2
-            person_bottom_y = py2
-
-            # Horizontal overlap.
-            overlap_x = max(
-                0,
-                min(px2, bx2) - max(px1, bx1)
-            )
-
-    bike_results = []
-    triple_riding_count = 0
     person_to_bike = {}
+    pair_metrics = {}
 
-    # Score every person-bike pair first, then choose each person's best
-    # motorcycle. This avoids detector order assigning nearby pedestrians
-    # to the first bike in the list.
-    person_candidates = {}
+    # Score every plausible person-bike pair, then assign each person to at
+    # most one bike. This prevents detector order from biasing crowded scenes.
     for person_index, person in enumerate(persons):
         px1, py1, px2, py2 = person["box"]
         person_width = max(1, px2 - px1)
@@ -571,13 +544,11 @@ def analyze_image():
             bx1, by1, bx2, by2 = motorcycle["box"]
             bike_width = max(1, bx2 - bx1)
             bike_height = max(1, by2 - by1)
-            # The detector box often covers the scooter frame but clips a
-            # pillion rider's torso. Expand the bike ROI modestly while
-            # retaining a vertical gate to avoid nearby pedestrians.
+
+            # Expand the vehicle ROI slightly because its detector box may
+            # cover the frame while clipping a pillion rider's lower body.
             roi_x1 = bx1 - bike_width * 0.20
             roi_x2 = bx2 + bike_width * 0.20
-            roi_y1 = by1 - bike_height * 0.20
-            roi_y2 = by2 + bike_height * 0.12
             roi_width = max(1.0, roi_x2 - roi_x1)
             bike_center_x = (roi_x1 + roi_x2) / 2
             overlap_x = max(0, min(px2, roi_x2) - max(px1, roi_x1))
@@ -590,43 +561,48 @@ def analyze_image():
                 and abs(person_center_x - bike_center_x)
                 <= bike_width * 0.75
             )
-
-            # Vertical alignment.
             vertical_match = (
                 by1 - bike_height * 0.75
-                <= person_bottom_y
+                <= py2
                 <= by2 + bike_height * 0.15
             )
-
-            # Relative person size.
-            size_match = (
-                person_height >= bike_height * 0.40
-            )
-            candidate_scores.append((score, bike_index))
-
-            is_associated = (
-                horizontal_match
-                and vertical_match
-                and size_match
+            size_match = person_height >= bike_height * 0.40
+            plausible_match = (
+                horizontal_match and vertical_match and size_match
             )
 
-            association_debug.append({
-                "person_index": person_index + 1,
-                "associated": is_associated,
+            score = overlap_ratio - (0.5 * center_distance) - (0.1 * bottom_offset)
+            pair_metrics[(person_index, bike_index)] = {
                 "horizontal_match": horizontal_match,
                 "vertical_match": vertical_match,
                 "size_match": size_match,
-                "overlap_ratio": round(
-                    overlap_ratio,
-                    3
-                )
-            })
+                "plausible_match": plausible_match,
+                "overlap_ratio": round(overlap_ratio, 3),
+            }
+            if plausible_match:
+                candidate_scores.append((score, bike_index))
 
-            if is_associated:
-                associated_persons.append(person_index)
+        if candidate_scores:
+            # On equal scores, prefer the lower bike index deterministically.
+            best_score, best_bike_index = max(
+                candidate_scores,
+                key=lambda candidate: (candidate[0], -candidate[1]),
+            )
+            person_to_bike[person_index] = best_bike_index
 
-    for person_index, bike_index in person_candidates.items():
-        person_to_bike[person_index] = bike_index
+    bike_association_debug = {
+        bike_index: []
+        for bike_index in range(1, len(motorcycles) + 1)
+    }
+    for (person_index, bike_index), metrics in pair_metrics.items():
+        bike_association_debug[bike_index].append({
+            "person_index": person_index + 1,
+            "associated": person_to_bike.get(person_index) == bike_index,
+            "horizontal_match": metrics["horizontal_match"],
+            "vertical_match": metrics["vertical_match"],
+            "size_match": metrics["size_match"],
+            "overlap_ratio": metrics["overlap_ratio"],
+        })
 
     for bike_index, motorcycle in enumerate(motorcycles, start=1):
         associated_persons = [
@@ -654,7 +630,7 @@ def analyze_image():
             "box": motorcycle["box"],
             "person_count": person_count,
             "status": status,
-            "association_debug": association_debug
+            "association_debug": bike_association_debug[bike_index]
         })
 
         print(
@@ -782,7 +758,7 @@ def analyze_image():
     # 7. SAVE HELMET VIOLATIONS
     # ======================================
 
-    save_violations(database_records)
+    records_saved = save_violations(database_records, image_digest)
 
     # ======================================
     # 10. RETURN RESULTS TO REACT
@@ -822,6 +798,8 @@ def analyze_image():
         ),
 
         "plate_results": plate_results,
+
+        "plate_ocr_error": plate_ocr_error,
 
         "bike_results": bike_results,
 
