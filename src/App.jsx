@@ -1,7 +1,7 @@
+
 import { useEffect, useState } from "react";
 
 import Sidebar from "./components/Sidebar";
-import Login from "./pages/Login";
 import NotificationPanel from "./components/NotificationPanel";
 
 import Dashboard from "./pages/Dashboard";
@@ -11,42 +11,6 @@ import Violations from "./pages/Violations";
 import DetectionHistory from "./pages/DetectionHistory";
 
 function App() {
-  // =========================
-  // AUTHENTICATION
-  // =========================
-
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem("trafficVisionAuth") === "true";
-  });
-
-  const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem("trafficVisionUser");
-    return savedUser ? JSON.parse(savedUser) : null;
-  });
-
-  const handleLogin = (userData) => {
-    setUser(userData);
-    setIsAuthenticated(true);
-
-    localStorage.setItem("trafficVisionAuth", "true");
-    localStorage.setItem(
-      "trafficVisionUser",
-      JSON.stringify(userData)
-    );
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    setIsAuthenticated(false);
-
-    localStorage.removeItem("trafficVisionAuth");
-    localStorage.removeItem("trafficVisionUser");
-  };
-
-  // =========================
-  // APPLICATION STATE
-  // =========================
-
   const [activePage, setActivePage] = useState("dashboard");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -82,25 +46,19 @@ function App() {
   ];
 
   const [notifications, setNotifications] = useState(() => {
-    const savedNotifications = localStorage.getItem(
-      "trafficVisionNotifications"
-    );
-
-    if (!savedNotifications) {
-      return defaultNotifications;
-    }
-
     try {
-      const parsedNotifications = JSON.parse(savedNotifications);
-      return Array.isArray(parsedNotifications)
-        ? parsedNotifications.filter(
-            (item) => ![1, 2, 3, 4].includes(item.id)
-          )
+      const savedNotifications = localStorage.getItem(
+        "trafficVisionNotifications"
+      );
+
+      return savedNotifications
+        ? JSON.parse(savedNotifications)
         : defaultNotifications;
     } catch {
       return defaultNotifications;
     }
   });
+
   useEffect(() => {
     localStorage.setItem(
       "trafficVisionNotifications",
@@ -113,11 +71,8 @@ function App() {
   const handleGlobalSearch = () => {
     const query = searchQuery.trim().toLowerCase();
 
-    if (!query) {
-      return;
-    }
+    if (!query) return;
 
-    // Violation related search
     const violationKeywords = [
       "helmet",
       "overspeed",
@@ -126,16 +81,13 @@ function App() {
       "violations",
     ];
 
-    const violationMatch = violationKeywords.some((keyword) =>
-      query.includes(keyword)
-    );
-
-    if (violationMatch) {
+    if (
+      violationKeywords.some((keyword) => query.includes(keyword))
+    ) {
       setActivePage("violations");
       return;
     }
 
-    // Detection history related search
     const historyMatch = analysisHistory.some((item) =>
       `${item.id} ${item.fileName} ${item.type} ${item.violations} ${item.status}`
         .toLowerCase()
@@ -157,7 +109,6 @@ function App() {
       return;
     }
 
-    // Upload
     if (
       query.includes("upload") ||
       query.includes("media")
@@ -166,13 +117,8 @@ function App() {
       return;
     }
 
-    // Default
     setActivePage("dashboard");
   };
-
-  // =========================
-  // PAGE RENDERING
-  // =========================
 
   const renderPage = () => {
     switch (activePage) {
@@ -220,18 +166,6 @@ function App() {
     }
   };
 
-  // =========================
-  // LOGIN SCREEN
-  // =========================
-
-  if (!isAuthenticated) {
-    return <Login onLogin={handleLogin} />;
-  }
-
-  // =========================
-  // MAIN APPLICATION
-  // =========================
-
   return (
     <div className="app">
       <Sidebar
@@ -240,9 +174,7 @@ function App() {
       />
 
       <main className="main-content">
-
         <header className="topbar">
-
           <div className="search-box">
             <span>⌕</span>
 
@@ -271,7 +203,6 @@ function App() {
           </div>
 
           <div className="topbar-right">
-
             <NotificationPanel
               notifications={notifications}
               setNotifications={setNotifications}
@@ -280,37 +211,17 @@ function App() {
             />
 
             <div className="profile">
-
-              <div className="profile-avatar">
-                {user?.name?.charAt(0).toUpperCase() || "A"}
-              </div>
+              <div className="profile-avatar">A</div>
 
               <div>
-                <strong>
-                  {user?.name || "Admin"}
-                </strong>
-
-                <span>
-                  Administrator
-                </span>
+                <strong>Admin</strong>
+                <span>Administrator</span>
               </div>
-
             </div>
-
-            <button
-              type="button"
-              className="logout-btn"
-              onClick={handleLogout}
-            >
-              Logout
-            </button>
-
           </div>
-
         </header>
 
         {renderPage()}
-
       </main>
     </div>
   );
