@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { classifyViolationRecord } from "../utils/violationRecords";
-
-const API_URL = "http://127.0.0.1:5000";
+import { API_URL } from "../api";
 
 function fileNameFromPath(path) {
     return path?.split(/[\\/]/).pop() || "Image";
 }
 
-function Dashboard({ setActivePage, analysisHistory = [] }) {
+function Dashboard({ setActivePage, analysisHistory = [], historyLoaded = false, historyError = "" }) {
     const [savedViolations, setSavedViolations] = useState([]);
     const [loadError, setLoadError] = useState("");
 
@@ -97,7 +96,7 @@ function Dashboard({ setActivePage, analysisHistory = [] }) {
                 </div>
 
                 <div className="stat-card">
-                    <span className="stat-label">No-Helmet Records</span>
+                    <span className="stat-label">Confirmed No-Helmet Records</span>
                     <h2>{summary.noHelmetRecords}</h2>
                     <span className="stat-change">Saved to the database</span>
                 </div>
@@ -114,7 +113,7 @@ function Dashboard({ setActivePage, analysisHistory = [] }) {
                     <div className="panel-header">
                         <div>
                             <h3>Recent Violation Records</h3>
-                            <p>Latest records saved by image analysis</p>
+                            <p>Saved records; possible rider-count alerts require review</p>
                         </div>
                         <button
                             className="view-btn"
@@ -199,22 +198,14 @@ function Dashboard({ setActivePage, analysisHistory = [] }) {
                         <b>{summary.platesAvailable}</b>
                     </div>
 
-                    <div className="violation-item">
-                        <span className="violation-icon speed">S</span>
-                        <div>
-                            <strong>Overspeed detection</strong>
-                            <small>Not implemented</small>
-                        </div>
-                        <b>N/A</b>
-                    </div>
                 </div>
             </section>
 
-            {recentAnalyses.length > 0 && <section className="panel recent-panel">
+            <section className="panel recent-panel">
                 <div className="panel-header">
                     <div>
                         <h3>Recent Image Analyses</h3>
-                        <p>Saved on this browser and device</p>
+                        <p>{historyError ? "Showing this browser’s saved copy" : "Saved in the shared project database"}</p>
                     </div>
                     <button
                         className="view-btn"
@@ -226,7 +217,7 @@ function Dashboard({ setActivePage, analysisHistory = [] }) {
 
                 {recentAnalyses.length === 0 ? (
                     <p className="dashboard-empty">
-                        No image analyses saved on this device yet.
+                        {historyError || (historyLoaded ? "No image analyses saved yet." : "Loading shared analysis history…")}
                     </p>
                 ) : (
                     <div className="table-wrapper dashboard-analyses-wrapper">
@@ -254,7 +245,7 @@ function Dashboard({ setActivePage, analysisHistory = [] }) {
                         </table>
                     </div>
                 )}
-            </section>}
+            </section>
         </main>
     );
 }

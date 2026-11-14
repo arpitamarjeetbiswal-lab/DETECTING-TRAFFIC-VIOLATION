@@ -1,31 +1,14 @@
-import { useEffect, useState } from "react";
-
 function TrafficMonitoring({
   setActivePage,
   selectedFile,
+  previewUrl,
   analysisResult,
   analysisStatus,
 }) {
-  const [previewUrl, setPreviewUrl] = useState(null);
-
-  useEffect(() => {
-    if (!selectedFile) {
-      setPreviewUrl(null);
-      return;
-    }
-
-    const url = URL.createObjectURL(selectedFile);
-    setPreviewUrl(url);
-
-    return () => {
-      URL.revokeObjectURL(url);
-    };
-  }, [selectedFile]);
-
   const getEngineStatus = () => {
     if (analysisStatus === "processing") return "Processing";
     if (analysisStatus === "completed") return "Analysis Complete";
-    return "Ready";
+    return selectedFile ? "Ready to analyze" : "Awaiting image";
   };
 
   return (
@@ -69,7 +52,7 @@ function TrafficMonitoring({
             )}
           </div>
 
-          <div className="monitoring-preview">
+          <div className={`monitoring-preview${selectedFile ? " has-image" : " is-empty"}`}>
             {selectedFile && previewUrl ? (
               <img
                 src={previewUrl}
@@ -199,13 +182,6 @@ function TrafficMonitoring({
                 <span className="model-status">Review alert</span>
               </div>
 
-              <div className="model">
-                <div>
-                  <strong>Overspeed Detection</strong>
-                  <span>Not implemented in this image-only prototype</span>
-                </div>
-                <span className="model-status">N/A</span>
-              </div>
             </div>
           </div>
 
@@ -220,11 +196,6 @@ function TrafficMonitoring({
               <div className="monitoring-violation">
                 <span>No Helmet</span>
                 <strong>{analysisResult.helmet}</strong>
-              </div>
-
-              <div className="monitoring-violation">
-                <span>Overspeed</span>
-                <strong>{analysisResult.overspeed ?? "N/A"}</strong>
               </div>
 
               <div className="monitoring-violation">

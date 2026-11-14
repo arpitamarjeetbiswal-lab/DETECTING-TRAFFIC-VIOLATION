@@ -1,23 +1,21 @@
 import { useRef, useState } from "react";
-
-const API_URL = "http://127.0.0.1:5000";
+import { API_URL } from "../api";
 
 function UploadMedia({
   setActivePage,
   selectedFile,
   setSelectedFile,
+  previewUrl,
+  setPreviewUrl,
   analysisResult,
   setAnalysisResult,
   analysisStatus,
   setAnalysisStatus,
-  analysisHistory,
   setAnalysisHistory,
-  notifications,
   setNotifications,
 }) {
   const fileInputRef = useRef(null);
 
-  const [preview, setPreview] = useState(null);
   const [error, setError] = useState("");
 
   const MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -48,14 +46,10 @@ function UploadMedia({
       return;
     }
 
-    if (preview) {
-      URL.revokeObjectURL(preview);
-    }
-
     const objectUrl = URL.createObjectURL(selected);
 
     setSelectedFile(selected);
-    setPreview(objectUrl);
+    setPreviewUrl(objectUrl);
 
     setAnalysisResult(null);
     setAnalysisStatus("idle");
@@ -78,12 +72,8 @@ function UploadMedia({
   const removeFile = () => {
     if (analysisStatus === "processing") return;
 
-    if (preview) {
-      URL.revokeObjectURL(preview);
-    }
-
     setSelectedFile(null);
-    setPreview(null);
+    setPreviewUrl(null);
 
     setAnalysisResult(null);
     setAnalysisStatus("idle");
@@ -178,9 +168,6 @@ function UploadMedia({
         helmet:
           data.helmet_violations ?? helmetViolations,
 
-        // Overspeed detection is not implemented yet.
-        overspeed: null,
-
         processingTimeSeconds: Number.isFinite(
           data.processing_time_seconds
         )
@@ -224,48 +211,13 @@ function UploadMedia({
       // SAVE ANALYSIS HISTORY
       // ======================================
 
-      const violationLabel =
-        result.helmet > 0 && result.tripleRiding > 0
-              ? "No Helmet + Possible Triple Riding"
-          : result.helmet > 0
-            ? "No Helmet"
-            : result.tripleRiding > 0
-              ? "Possible Triple Riding"
-          : "No Confirmed Violation";
-
-      const newHistoryRecord = {
-        id: `D-${Date.now()}`,
-
-        fileName: selectedFile.name,
-
-        type: "Image",
-
-        violations: violationLabel,
-
-        vehicles: result.vehicles,
-
-        violationCount: result.violations,
-
-        confidence: result.confidence,
-
-        date: new Date().toLocaleDateString("en-GB", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }),
-
-        time: new Date().toLocaleTimeString("en-US", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-
-        status: "Completed",
-      };
-
-      setAnalysisHistory((prev) => [
-        newHistoryRecord,
-        ...prev,
-      ]);
+      const newHistoryRecord = data.analysis_record;
+      if (newHistoryRecord) {
+        setAnalysisHistory((previous) => [
+          newHistoryRecord,
+          ...previous.filter((record) => record.id !== newHistoryRecord.id),
+        ]);
+      }
 
       // ======================================
       // UPDATE NOTIFICATIONS
@@ -287,17 +239,15 @@ function UploadMedia({
         },
       ];
 
-      if (result.violations > 0) {
+      if (result.violations > 0 || result.tripleRiding > 0) {
         newNotifications.push({
           id: Date.now() + 1,
 
-          title: "Traffic Violations Detected",
+          title: result.violations > 0 ? "Confirmed Violation / Review Alert" : "Review Alert",
 
           message:
-            `${result.violations} total violation(s) detected in ` +
-            `${selectedFile.name}: ` +
-            `${result.helmet} no-helmet detection(s) and ` +
-            `${result.tripleRiding} triple-riding detection(s).`,
+            `${selectedFile.name}: ${result.helmet} confirmed no-helmet violation(s); ` +
+            `${result.tripleRiding} possible triple-riding case(s) require review.`,
 
           time: "Just now",
 
@@ -346,7 +296,7 @@ function UploadMedia({
     <div className="page-content upload-page">
 
       {/* PAGE HEADER */}
-      <div className="page-header">
+      <div className="page-header upload-page-header">
         <div>
           <span className="page-label">
             MEDIA ANALYSIS
@@ -359,6 +309,46 @@ function UploadMedia({
             and triple-riding violation detection.
           </p>
         </div>
+
+        <div
+          className={`drop-zone upload-header-picker${selectedFile ? " has-file" : ""}`}
+          onClick={openFilePicker}
+          role="button"
+          tabIndex={analysisStatus === "processing" ? -1 : 0}
+          aria-label={selectedFile ? "Choose another image" : "Select an image"}
+          onKeyDown={(event) => {
+            if ((event.key === "Enter" || event.key === " ") && analysisStatus !== "processing") {
+              event.preventDefault();
+              openFilePicker();
+            }
+          }}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp"
+            onChange={handleChange}
+            disabled={analysisStatus === "processing"}
+            style={{ display: "none" }}
+          />
+
+          {!selectedFile ? (
+            <>
+              <div className="upload-icon">↑</div>
+              <h3>Select Image</h3>
+              <p>JPG · PNG · WEBP</p>
+            </>
+          ) : (
+            <div className="selected-file-summary">
+              <div className="upload-icon">✓</div>
+              <div className="selected-file-summary__text">
+                <h3>File Selected</h3>
+                <p>{selectedFile.name}</p>
+                <span>Choose another</span>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="upload-grid">
@@ -366,76 +356,37 @@ function UploadMedia({
         {/* UPLOAD CARD */}
         <div className="upload-card">
 
-          {/* FILE PICKER */}
-          <div
-            className="drop-zone"
-            onClick={openFilePicker}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".jpg,.jpeg,.png,.webp"
-              onChange={handleChange}
-              disabled={analysisStatus === "processing"}
-              style={{ display: "none" }}
-            />
+          <div className="upload-selection-layout">
+            {/* ERROR MESSAGE */}
+            {error && <div className="upload-error">{error}</div>}
 
-            {!selectedFile ? (
-              <>
-                <div className="upload-icon">
-                  ↑
+            {/* ORIGINAL IMAGE PREVIEW */}
+            {selectedFile && previewUrl ? (
+              <div className="media-preview-container selected-image-preview">
+                <h3>Original Image</h3>
+                <div className="selected-image-preview__stage">
+                  <img
+                    src={previewUrl}
+                    alt="Selected traffic media"
+                    className="preview-image selected-image-preview__image"
+                  />
                 </div>
-
-                <h3>Upload Traffic Image</h3>
-
-                <p>
-                  Click to browse from your computer
-                </p>
-
-                <div className="upload-formats">
-                  <span>JPG</span>
-                  <span>PNG</span>
-                  <span>WEBP</span>
-                </div>
-
-                <small>
-                  Maximum file size: 20 MB
-                </small>
-              </>
+              </div>
             ) : (
-              <>
-                <div className="upload-icon">
-                  ✓
+              <div className="media-preview-container selected-image-preview selected-image-preview--empty">
+                <div className="upload-empty-state">
+                  <span className="upload-empty-state__icon" aria-hidden="true">▧</span>
+                  <div>
+                    <h3>Your image preview will appear here</h3>
+                    <p>Choose a traffic image to see it at full size before analysis.</p>
+                  </div>
+                  <button type="button" className="upload-empty-state__button" onClick={openFilePicker}>
+                    Choose image
+                  </button>
                 </div>
-
-                <h3>File Selected</h3>
-
-                <p>{selectedFile.name}</p>
-              </>
+              </div>
             )}
           </div>
-
-          {/* ERROR MESSAGE */}
-          {error && (
-            <div className="upload-error">
-              {error}
-            </div>
-          )}
-
-          {/* ORIGINAL IMAGE PREVIEW */}
-          {selectedFile && preview && (
-            <div className="media-preview-container">
-
-              <h3>Original Image</h3>
-
-              <img
-                src={preview}
-                alt="Selected traffic media"
-                className="preview-image"
-              />
-
-            </div>
-          )}
 
           {/* FILE INFORMATION */}
           {selectedFile && (
@@ -594,9 +545,9 @@ function UploadMedia({
               </div>
 
               {/* VIOLATION COUNTS */}
-              <div className="violation-results">
+              <div className="violation-results violation-counts">
 
-                <div className="violation-result">
+                <div className={`violation-result ${Number(analysisResult.helmet) > 0 ? "violation-result--alert" : "violation-result--clear"}`}>
                   <span>No Helmet</span>
 
                   <strong>
@@ -604,15 +555,7 @@ function UploadMedia({
                   </strong>
                 </div>
 
-                <div className="violation-result">
-                  <span>Overspeed</span>
-
-                  <strong>
-                    {analysisResult.overspeed ?? "N/A"}
-                  </strong>
-                </div>
-
-                <div className="violation-result">
+                <div className={`violation-result ${Number(analysisResult.tripleRiding) > 0 ? "violation-result--alert" : "violation-result--clear"}`}>
                   <span>Potential Triple Riding · Review</span>
 
                   <strong>
@@ -649,151 +592,122 @@ function UploadMedia({
                   MOTORCYCLE ANALYSIS
               ================================== */}
 
-              <div className="violation-results">
-
-                <h3>Motorcycle Analysis</h3>
-
-                <p>
-                  Motorcycles detected:{" "}
-                  {analysisResult.vehicles ?? "N/A"}
-                </p>
-
-                <p>
-                  Persons detected:{" "}
-                  {analysisResult.personsDetected}
-                </p>
-
-                {analysisResult.bikeResults.length === 0 ? (
-                  <p>
-                    No motorcycles detected in this image.
-                  </p>
-                ) : (
-                  analysisResult.bikeResults.map((bike) => (
-
-                    <div
-                      className={`violation-result ${
-                        Number(bike.person_count) >= 3
-                          ? "violation-result--alert"
-                          : "violation-result--clear"
-                      }`}
-                      key={bike.bike_index}
-                    >
-
-                      <span>
-                        Bike {bike.bike_index}:{" "}
-                        {bike.person_count} associated
-                        person(s)
-                      </span>
-
-                      <strong>
-                        {Number(bike.person_count) >= 3
-                          ? "Triple Riding Detected"
-                          : "No Triple Riding"}
-                      </strong>
-
+              <div className="analysis-detail-grid">
+                {/* MOTORCYCLE ANALYSIS */}
+                <section className="analysis-detail-section">
+                  <div className="analysis-detail-heading">
+                    <h3>Motorcycle Analysis</h3>
+                    <div className="analysis-detail-summary">
+                      <span><strong>{analysisResult.vehicles ?? "N/A"}</strong> motorcycles</span>
+                      <span><strong>{analysisResult.personsDetected ?? 0}</strong> people detected</span>
                     </div>
-                  ))
-                )}
+                  </div>
 
-                <small>
-                  Rider counts are geometric estimates from detected
-                  person and motorcycle boxes. Occlusion can cause missed
-                  riders or bystanders to be associated.
-                </small>
+                  {analysisResult.bikeResults.length === 0 ? (
+                    <p className="analysis-empty-state">No motorcycles detected in this image.</p>
+                  ) : (
+                    <div className="analysis-item-grid">
+                      {analysisResult.bikeResults.map((bike) => (
+                        (() => {
+                          const isTripleRiding = Number(bike.person_count) >= 3;
+                          const hasNoHelmet = Boolean(bike.has_no_helmet) ||
+                            analysisResult.detections.some((detection) =>
+                              detection.violation_type === "Without Helmet" &&
+                              Number(detection.bike_index) === Number(bike.bike_index)
+                            );
+                          const labels = [
+                            hasNoHelmet && "No Helmet",
+                            isTripleRiding && "Triple Riding",
+                          ].filter(Boolean);
+                          const isViolation = labels.length > 0;
 
-              </div>
-
-              {/* ==================================
-                  NUMBER-PLATE READS
-              ================================== */}
-
-              <div className="violation-results">
-
-                <h3>Number Plate Reads</h3>
-
-                {analysisResult.plateResults.length === 0 ? (
-                  <p>No number plates detected.</p>
-                ) : (
-                  analysisResult.plateResults.map((plate, index) => (
-
-                    <div
-                      className="violation-result"
-                      key={`${plate.box?.join("-") || "plate"}-${index}`}
-                    >
-
-                      <span>
-                        {plate.plate_number ||
-                          (plate.status === "OCR_SKIPPED_UNMATCHED"
-                            ? "Plate detected; OCR skipped"
-                            : "Unreadable plate")}
-                      </span>
-
-                      <strong>
-                        {plate.motorcycle_index
-                          ? `Bike ${plate.motorcycle_index} · `
-                          : "Unmatched · "}
-                        {plate.status.replaceAll("_", " ")}
-                        {Number.isFinite(plate.ocr_confidence)
-                          ? ` · ${(plate.ocr_confidence * 100).toFixed(1)}% OCR confidence`
-                          : ""}
-                      </strong>
-
+                          return (
+                            <div
+                              className={`violation-result ${isViolation ? "violation-result--alert" : "violation-result--clear"}`}
+                              key={bike.bike_index}
+                            >
+                              <span className="analysis-item-label">Bike {bike.bike_index}</span>
+                              <strong className="analysis-item-value">
+                                <span>{bike.person_count} associated</span>
+                                <span>{isViolation ? `${labels.join(" + ")} Detected` : "No Violation Detected"}</span>
+                              </strong>
+                            </div>
+                          );
+                        })()
+                      ))}
                     </div>
-                  ))
-                )}
+                  )}
 
-                <small>
-                  OCR text is an estimate. Unmatched plates may skip OCR;
-                  review any plate text before using it to identify a vehicle.
-                </small>
+                  <small className="analysis-detail-note">
+                    Rider counts are geometric estimates from detected person and motorcycle boxes. Occlusion can cause missed riders or bystanders to be associated.
+                  </small>
+                </section>
 
-              </div>
+                {/* NUMBER-PLATE READS */}
+                <section className="analysis-detail-section">
+                  <div className="analysis-detail-heading">
+                    <h3>Number Plate Reads</h3>
+                    <span className="analysis-detail-count">{analysisResult.plateResults.length} detected</span>
+                  </div>
 
-              {/* ==================================
-                  HELMET DETECTION DETAILS
-              ================================== */}
+                  {analysisResult.plateResults.length === 0 ? (
+                    <p className="analysis-empty-state">No number plates detected.</p>
+                  ) : (
+                    <div className="analysis-item-grid">
+                      {analysisResult.plateResults.map((plate, index) => (
+                        <div className="violation-result" key={`${plate.box?.join("-") || "plate"}-${index}`}>
+                          <span className="analysis-item-label">
+                            {plate.plate_number || (plate.status === "OCR_SKIPPED_UNMATCHED" ? "Plate detected; OCR skipped" : "Unreadable plate")}
+                          </span>
+                          <strong className="analysis-item-value analysis-item-value--detail">
+                            {plate.motorcycle_index ? `Bike ${plate.motorcycle_index} · ` : "Unmatched · "}
+                            {plate.status.replaceAll("_", " ")}
+                            {Number.isFinite(plate.ocr_confidence) ? ` · ${(plate.ocr_confidence * 100).toFixed(1)}% OCR confidence` : ""}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-              <div className="violation-results">
+                  <small className="analysis-detail-note">
+                    OCR text is an estimate. Unmatched plates may skip OCR; review any plate text before using it to identify a vehicle.
+                  </small>
+                </section>
 
-                <h3>YOLO Helmet Detection Details</h3>
+                {/* HELMET DETECTION DETAILS */}
+                <section className="analysis-detail-section analysis-detail-section--wide">
+                  <div className="analysis-detail-heading">
+                    <h3>YOLO Helmet Detection Details</h3>
+                    <span className="analysis-detail-count">{analysisResult.detections.length} detections</span>
+                  </div>
 
-                {analysisResult.detections.length === 0 ? (
-                  <p>
-                    No helmet detections found above
-                    the confidence threshold.
-                  </p>
-                ) : (
-                  analysisResult.detections.map(
-                    (detection, index) => (
-
-                      <div
-                        className="violation-result"
-                        key={index}
-                      >
-
-                        <span>
-                          {detection.violation_type === "Without Helmet" &&
-                          detection.violation_confirmed === false
-                            ? "Possible Without Helmet · Motorcycle not matched"
-                            : detection.violation_type}
-                          {detection.violation_confirmed === false
-                            ? ""
-                            : detection.number_plate
-                            ? ` · Bike ${detection.motorcycle_index} · Plate ${detection.number_plate}`
-                            : detection.violation_type === "Without Helmet"
-                              ? " · Plate not confidently matched"
-                              : ""}
-                        </span>
-
-                        <strong>
-                          {detection.confidence}%
-                        </strong>
-
-                      </div>
-                    )
-                  )
-                )}
-
+                  {analysisResult.detections.length === 0 ? (
+                    <p className="analysis-empty-state">No helmet detections found above the confidence threshold.</p>
+                  ) : (
+                    <div className="analysis-item-grid analysis-item-grid--helmet">
+                      {analysisResult.detections.map((detection, index) => (
+                        <div
+                          className={`violation-result ${detection.violation_type === "Without Helmet" ? "violation-result--alert" : "violation-result--clear"}`}
+                          key={index}
+                        >
+                          <span className="analysis-item-label">
+                            {detection.violation_type === "Without Helmet" && detection.violation_confirmed === false
+                              ? "Possible Without Helmet · Motorcycle not matched"
+                              : detection.violation_type}
+                            {detection.violation_confirmed === false
+                              ? ""
+                              : detection.number_plate
+                                ? ` · Bike ${detection.motorcycle_index} · Plate ${detection.number_plate}`
+                                : detection.violation_type === "Without Helmet"
+                                  ? " · Plate not confidently matched"
+                                  : ""}
+                          </span>
+                          <strong className="analysis-item-value">{detection.confidence}%</strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
               </div>
 
               {/* VIEW MONITORING */}
@@ -870,25 +784,6 @@ function UploadMedia({
 
             <span className="model-status">
               Estimate
-            </span>
-
-          </div>
-
-          {/* OVERSPEED */}
-          <div className="detection-model">
-
-            <div>
-              <strong>
-                Overspeed
-              </strong>
-
-              <span>
-                Backend integration pending
-              </span>
-            </div>
-
-            <span className="model-status">
-              —
             </span>
 
           </div>

@@ -14,11 +14,15 @@ A React dashboard and Flask service for image-based motorcycle, helmet, and numb
 - Display plate text, confidence, and review status in the upload results.
 - Report analysis time in the results; EasyOCR uses CUDA when available and falls back to CPU if GPU initialization fails.
 - Skip OCR for detected plates that do not clearly overlap a detected motorcycle.
-- Keep image-analysis summaries in the browser and confirmed or reviewable violation records in SQLite.
+- Store image-analysis history and confirmed or reviewable violation records in SQLite so they are available to every browser connected to the same backend. Older browser-local history is imported once on first connection.
 
 Detection quality depends on image resolution, camera angle, lighting, and model training. Small or unclear plates may be reported as unreadable or incorrect; review all results.
 
-This prototype accepts still images only. Video, live camera analysis, and overspeed detection are not implemented; overspeed is shown as `N/A`.
+This prototype accepts still images only. Video and live camera analysis are not implemented.
+
+The SQLite database must live on persistent storage when deployed. If the hosting platform removes local files during restarts or redeploys, configure a persistent volume or migrate the database to a managed database service.
+
+For a deployment where the frontend and backend use different origins, set `VITE_API_URL` to the public Flask API URL at frontend build time and set `CORS_ALLOWED_ORIGINS` to the frontend origin on Flask. The Flask development server can bind to the network with `FLASK_HOST=0.0.0.0`; use a production WSGI server for deployment.
 
 ## Requirements
 

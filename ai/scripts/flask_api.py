@@ -2,6 +2,7 @@ from uuid import uuid4
 from datetime import datetime
 from pathlib import Path
 import hashlib
+import os
 import sqlite3
 from time import perf_counter
 
@@ -19,12 +20,18 @@ from ultralytics import YOLO
 
 app = Flask(__name__)
 
+allowed_origins = [
+    origin.strip()
+    for origin in os.environ.get(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
+
 CORS(app, resources={
     r"/api/*": {
-        "origins": [
-            "http://localhost:5173",
-            "http://127.0.0.1:5173"
-        ]
+        "origins": allowed_origins
     }
 })
 
@@ -135,6 +142,105 @@ def save_violations(records, image_digest):
 
     finally:
         conn.close()
+
+
+def ensure_analysis_history_table(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS analysis_history (
+            id TEXT PRIMARY KEY,
+            file_name TEXT NOT NULL,
+            result_summary TEXT NOT NULL,
+            motorcycles INTEGER NOT NULL DEFAULT 0,
+            persons INTEGER NOT NULL DEFAULT 0,
+            confirmed_violations INTEGER NOT NULL DEFAULT 0,
+            review_alerts INTEGER NOT NULL DEFAULT 0,
+            confidence REAL,
+            processing_time_seconds REAL,
+            annotated_image_url TEXT,
+            created_at TEXT NOT NULL
+        )
+    """)
+
+
+def insert_analysis_history(conn, record):
+    ensure_analysis_history_table(conn)
+    conn.execute("""
+        INSERT OR IGNORE INTO analysis_history (
+            id, file_name, result_summary, motorcycles, persons,
+            confirmed_violations, review_alerts, confidence,
+            processing_time_seconds, annotated_image_url, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        record["id"],
+        record["fileName"],
+        record["violations"],
+        record["vehicles"],
+        record["personsDetected"],
+        record["violationCount"],
+        record["reviewCount"],
+        record["confidence"],
+        record["processingTimeSeconds"],
+        record["annotatedImageUrl"],
+        record["createdAt"],
+    ))
+
+
+def serialize_analysis_history_row(row):
+    created_at = datetime.fromisoformat(row["created_at"])
+    return {
+        "id": row["id"],
+        "fileName": row["file_name"],
+        "type": "Image",
+        "violations": row["result_summary"],
+        "vehicles": row["motorcycles"],
+        "personsDetected": row["persons"],
+        "violationCount": row["confirmed_violations"],
+        "reviewCount": row["review_alerts"],
+        "confidence": row["confidence"],
+        "processingTimeSeconds": row["processing_time_seconds"],
+        "annotatedImageUrl": row["annotated_image_url"],
+        "date": created_at.strftime("%d %b %Y"),
+        "time": created_at.strftime("%I:%M %p"),
+        "createdAt": created_at.isoformat(timespec="seconds"),
+        "status": "Completed",
+    }
+
+
+def make_history_record(record_id, file_name, result_summary, vehicles,
+                        persons, confirmed, reviews, confidence,
+                        processing_time, annotated_url, created_at):
+    return {
+        "id": record_id,
+        "fileName": str(file_name or "Image")[:255],
+        "type": "Image",
+        "violations": str(result_summary or "No Confirmed Violations")[:160],
+        "vehicles": max(0, int(vehicles or 0)),
+        "personsDetected": max(0, int(persons or 0)),
+        "violationCount": max(0, int(confirmed or 0)),
+        "reviewCount": max(0, int(reviews or 0)),
+        "confidence": confidence,
+        "processingTimeSeconds": processing_time,
+        "annotatedImageUrl": annotated_url,
+        "createdAt": created_at,
+        "date": datetime.fromisoformat(created_at).strftime("%d %b %Y"),
+        "time": datetime.fromisoformat(created_at).strftime("%I:%M %p"),
+        "status": "Completed",
+    }
+
+
+def safe_nonnegative_int(value):
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def safe_optional_float(value):
+    try:
+        number = float(value)
+        return number if number == number and abs(number) != float("inf") else None
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def intersection_over_inner_area(inner_box, outer_box):
@@ -258,6 +364,87 @@ def get_violations():
         conn.close()
 
 
+@app.route("/api/analysis-history", methods=["GET"])
+def get_analysis_history():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        ensure_analysis_history_table(conn)
+        rows = conn.execute(
+            "SELECT * FROM analysis_history ORDER BY created_at DESC, rowid DESC"
+        ).fetchall()
+        return jsonify([serialize_analysis_history_row(row) for row in rows])
+    finally:
+        conn.close()
+
+
+@app.route("/api/analysis-history/import", methods=["POST"])
+def import_legacy_analysis_history():
+    payload = request.get_json(silent=True) or {}
+    records = payload.get("records")
+    if not isinstance(records, list):
+        return jsonify({"error": "Records must be provided as a list."}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    imported = 0
+    try:
+        ensure_analysis_history_table(conn)
+        for item in records[:500]:
+            if not isinstance(item, dict):
+                continue
+
+            record_id = str(item.get("id") or f"D-{uuid4().hex[:12]}")[:64]
+            created_at = None
+            for candidate in (item.get("createdAt"), item.get("timestamp")):
+                try:
+                    created_at = datetime.fromisoformat(str(candidate)).isoformat(timespec="seconds")
+                    break
+                except (TypeError, ValueError):
+                    continue
+            if created_at is None:
+                try:
+                    parsed = datetime.strptime(
+                        f"{item.get('date', '')} {item.get('time', '')}",
+                        "%d %b %Y %I:%M %p",
+                    )
+                    created_at = parsed.isoformat(timespec="seconds")
+                except ValueError:
+                    created_at = datetime.now().isoformat(timespec="seconds")
+
+            legacy_summary = str(item.get("violations") or "")
+            legacy_review_count = item.get("reviewCount")
+            if legacy_review_count is None:
+                # Older browser entries stored only a summary label, not a per-bike count.
+                legacy_review_count = int("TRIPLE RIDING" in legacy_summary.upper())
+
+            history_record = make_history_record(
+                record_id=record_id,
+                file_name=item.get("fileName"),
+                result_summary=legacy_summary,
+                vehicles=safe_nonnegative_int(item.get("vehicles")),
+                persons=safe_nonnegative_int(item.get("personsDetected")),
+                confirmed=safe_nonnegative_int(item.get("violationCount")),
+                reviews=safe_nonnegative_int(legacy_review_count),
+                confidence=safe_optional_float(item.get("confidence")),
+                processing_time=safe_optional_float(item.get("processingTimeSeconds")),
+                annotated_url=None,
+                created_at=created_at,
+            )
+            inserted = conn.execute("SELECT 1 FROM analysis_history WHERE id = ?", (record_id,)).fetchone()
+            insert_analysis_history(conn, history_record)
+            if inserted is None:
+                imported += 1
+
+        conn.commit()
+        return jsonify({"imported": imported})
+    except (sqlite3.Error, ValueError) as error:
+        conn.rollback()
+        app.logger.exception("Could not import browser analysis history")
+        return jsonify({"error": "Could not import previous analysis history."}), 500
+    finally:
+        conn.close()
+
+
 @app.route("/api/violations/<int:record_id>/review", methods=["PATCH"])
 def review_violation(record_id):
     action = str((request.get_json(silent=True) or {}).get("action", "")).lower()
@@ -342,7 +529,7 @@ def analyze_image():
 
     extension = Path(uploaded_file.filename).suffix.lower()
 
-    if extension not in [".jpg", ".jpeg", ".png"]:
+    if extension not in [".jpg", ".jpeg", ".png", ".webp"]:
         return jsonify({
             "error": "Only JPG, PNG, and WebP images are allowed"
         }), 400
@@ -460,7 +647,8 @@ def analyze_image():
                 "confidence": round(
                     confidence * 100,
                     2
-                )
+                ),
+                "box": [x1, y1, x2, y2],
             })
 
     print("Total helmet violations:", helmet_violations)
@@ -630,6 +818,7 @@ def analyze_image():
             "box": motorcycle["box"],
             "person_count": person_count,
             "status": status,
+            "has_no_helmet": False,
             "association_debug": bike_association_debug[bike_index]
         })
 
@@ -637,6 +826,49 @@ def analyze_image():
             f"Bike {bike_index}: "
             f"{person_count} associated persons - {status}"
         )
+
+    # Link each helmet violation to the person whose head region contains
+    # the detection. This lets the UI identify which bike card has a helmet
+    # violation instead of coloring every bike in a multi-bike image.
+    bike_by_index = {
+        bike["bike_index"]: bike
+        for bike in bike_results
+    }
+    for detection in detections:
+        if detection["violation_type"] != "Without Helmet":
+            continue
+
+        hx1, hy1, hx2, hy2 = detection["box"]
+        helmet_center_x = (hx1 + hx2) / 2
+        helmet_center_y = (hy1 + hy2) / 2
+        person_candidates = []
+
+        for person_index, person in enumerate(persons):
+            px1, py1, px2, py2 = person["box"]
+            person_width = max(1, px2 - px1)
+            person_height = max(1, py2 - py1)
+            within_head_region = (
+                px1 - person_width * 0.12 <= helmet_center_x <= px2 + person_width * 0.12
+                and py1 - person_height * 0.08 <= helmet_center_y <= py1 + person_height * 0.48
+            )
+            bike_index = person_to_bike.get(person_index)
+            if within_head_region and bike_index in bike_by_index:
+                horizontal_distance = abs(helmet_center_x - (px1 + px2) / 2) / person_width
+                vertical_distance = abs(helmet_center_y - (py1 + py2) / 2) / person_height
+                person_candidates.append((horizontal_distance + vertical_distance, bike_index))
+
+        if person_candidates:
+            _, matched_bike_index = min(person_candidates, key=lambda candidate: candidate[0])
+        elif len(bike_results) == 1:
+            # In a single-bike image, the only bike is the useful association
+            # when the person detector misses an occluded rider.
+            matched_bike_index = bike_results[0]["bike_index"]
+        else:
+            matched_bike_index = None
+
+        if matched_bike_index is not None:
+            detection["bike_index"] = matched_bike_index
+            bike_by_index[matched_bike_index]["has_no_helmet"] = True
 
     # ======================================
     # 5. DRAW MOTORCYCLE BOXES
@@ -649,10 +881,12 @@ def analyze_image():
         is_triple = (
             bike["status"] == "Triple Riding Detected"
         )
+        has_no_helmet = bike["has_no_helmet"]
+        is_violation = is_triple or has_no_helmet
 
         color = (
             (0, 0, 255)
-            if is_triple
+            if is_violation
             else (0, 255, 0)
         )
 
@@ -664,10 +898,15 @@ def analyze_image():
             3
         )
 
+        violations = []
+        if has_no_helmet:
+            violations.append("NO HELMET")
+        if is_triple:
+            violations.append("TRIPLE RIDING")
         label = (
             f"Bike {bike['bike_index']}: "
             f"{bike['person_count']} persons - "
-            f"{bike['status']}"
+            f"{' + '.join(violations) if violations else 'No Violation'}"
         )
 
         cv2.putText(
@@ -770,6 +1009,37 @@ def analyze_image():
         perf_counter() - analysis_started_at,
         2
     )
+    analysis_created_at = datetime.now().isoformat(timespec="seconds")
+    confirmed_helmet_count = helmet_violations
+    history_summary_parts = []
+    if confirmed_helmet_count:
+        history_summary_parts.append("No Helmet")
+    if review_alerts:
+        history_summary_parts.append("Possible Triple Riding · Review")
+    history_summary = " + ".join(history_summary_parts) or "No Confirmed Violations"
+    average_helmet_confidence = (
+        round(sum(item["confidence"] for item in detections) / len(detections), 2)
+        if detections else None
+    )
+    history_record = make_history_record(
+        record_id=f"D-{uuid4().hex[:12].upper()}",
+        file_name=uploaded_file.filename,
+        result_summary=history_summary,
+        vehicles=len(motorcycles),
+        persons=len(persons),
+        confirmed=confirmed_violations,
+        reviews=review_alerts,
+        confidence=average_helmet_confidence,
+        processing_time=processing_time_seconds,
+        annotated_url=f"/api/annotated/{annotated_filename}",
+        created_at=analysis_created_at,
+    )
+    history_conn = sqlite3.connect(DB_PATH)
+    try:
+        insert_analysis_history(history_conn, history_record)
+        history_conn.commit()
+    finally:
+        history_conn.close()
 
     print(
         f"Image analysis completed in {processing_time_seconds:.2f}s"
@@ -816,6 +1086,8 @@ def analyze_image():
 
         "processing_time_seconds": processing_time_seconds,
 
+        "analysis_record": history_record,
+
         "annotated_image_url": (
             f"/api/annotated/{annotated_filename}"
         )
@@ -833,8 +1105,8 @@ if __name__ == "__main__":
     print("Database:", DB_PATH)
 
     app.run(
-        host="127.0.0.1",
-        port=5000,
+        host=os.environ.get("FLASK_HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "5000")),
         debug=True,
         use_reloader=False
     )

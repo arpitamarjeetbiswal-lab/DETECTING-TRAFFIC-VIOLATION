@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { classifyViolationRecord } from "../utils/violationRecords";
-
-const API_URL = "http://127.0.0.1:5000";
+import { API_URL } from "../api";
 
 function Violations() {
   const [records, setRecords] = useState([]);
@@ -76,7 +75,6 @@ function Violations() {
         <div className="violation-summary-card"><span>Saved Records</span><strong>{records.length}</strong></div>
         <div className="violation-summary-card"><span>No-Helmet Records</span><strong>{helmetCount}</strong></div>
         <div className="violation-summary-card"><span>Triple-Riding Reviews · incl. legacy</span><strong>{reviewCount}</strong></div>
-        <div className="violation-summary-card"><span>Overspeed</span><strong>N/A</strong></div>
       </div>
 
       <div className="violations-panel">
@@ -105,7 +103,7 @@ function Violations() {
                     <td><strong className="vehicle-name">{item.bike_id == null ? "N/A" : `Bike ${item.bike_id}`}</strong></td>
                     <td><span className="violation-type">{recordType.displayType}</span></td>
                     <td>{item.number_plate && item.number_plate !== "NOT_AVAILABLE" ? item.number_plate : "Unreadable / unavailable"}</td>
-                    <td>{item.image_path?.split(/[\\/]/).pop() || "—"}</td>
+                    <td><span className="table-file-name" title={item.image_path?.split(/[\\/]/).pop() || "—"}>{item.image_path?.split(/[\\/]/).pop() || "—"}</span></td>
                     <td><span className="violation-time">{item.timestamp || "—"}</span></td>
                     <td>
                       {recordType.requiresTripleReview ? <div className="violation-review-actions">
