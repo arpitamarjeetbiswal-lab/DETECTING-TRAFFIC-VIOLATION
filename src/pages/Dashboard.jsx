@@ -133,8 +133,8 @@ function Dashboard({ setActivePage, analysisHistory = [] }) {
                             No saved violations yet. Analyze an image to begin.
                         </p>
                     ) : (
-                        <div className="table-wrapper">
-                            <table>
+                        <div className="table-wrapper dashboard-records-wrapper">
+                            <table className="dashboard-records-table">
                                 <thead>
                                     <tr>
                                         <th>Violation</th>
@@ -229,8 +229,8 @@ function Dashboard({ setActivePage, analysisHistory = [] }) {
                         No image analyses saved on this device yet.
                     </p>
                 ) : (
-                    <div className="table-wrapper">
-                        <table>
+                    <div className="table-wrapper dashboard-analyses-wrapper">
+                        <table className="dashboard-analyses-table">
                             <thead>
                                 <tr>
                                     <th>Image</th>
