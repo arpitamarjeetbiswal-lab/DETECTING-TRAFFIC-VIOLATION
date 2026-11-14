@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { API_URL } from "../api";
 
-function DetectionHistory({ analysisHistory = [] }) {
+function DetectionHistory({ analysisHistory = [], historyLoaded = false, historyError = "" }) {
   const [statusFilter, setStatusFilter] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
   const [savedViolations, setSavedViolations] = useState([]);
@@ -9,7 +10,7 @@ function DetectionHistory({ analysisHistory = [] }) {
   useEffect(() => {
     const controller = new AbortController();
 
-    fetch("http://127.0.0.1:5000/api/violations", {
+    fetch(`${API_URL}/api/violations`, {
       signal: controller.signal,
     })
       .then((response) => {
@@ -38,9 +39,9 @@ function DetectionHistory({ analysisHistory = [] }) {
       const search = searchTerm.toLowerCase();
 
       const matchesSearch =
-        item.fileName.toLowerCase().includes(search) ||
-        item.id.toLowerCase().includes(search) ||
-        item.violations.toLowerCase().includes(search);
+        String(item.fileName || "").toLowerCase().includes(search) ||
+        String(item.id || "").toLowerCase().includes(search) ||
+        String(item.violations || "").toLowerCase().includes(search);
 
       return matchesStatus && matchesSearch;
     });
@@ -57,8 +58,12 @@ function DetectionHistory({ analysisHistory = [] }) {
     0
   );
 
-  const violationsFound = analysisHistory.reduce(
-    (total, item) => total + item.violationCount,
+  const confirmedViolations = analysisHistory.reduce(
+    (total, item) => total + (Number(item.violationCount) || 0),
+    0
+  );
+  const reviewAlerts = analysisHistory.reduce(
+    (total, item) => total + (Number(item.reviewCount) || 0),
     0
   );
 
@@ -66,13 +71,17 @@ function DetectionHistory({ analysisHistory = [] }) {
     <div className="page-content history-page">
       <div className="page-header">
         <div>
-          <span className="page-label">ANALYSIS RECORDS</span>
+            <span className="page-label">{historyError ? "LOCAL HISTORY COPY" : "SHARED ANALYSIS RECORDS"}</span>
           <h1>Detection History</h1>
           <p>
-            Review previous traffic media analysis and AI detection results.
+            {historyError
+              ? "The shared history is unavailable; showing this browser’s saved copy."
+              : "Review image analyses saved in the shared project database."}
           </p>
         </div>
       </div>
+
+      {historyError && <p className="history-sync-warning" role="status">{historyError}</p>}
 
       {/* Summary Cards */}
       <div className="history-summary">
@@ -87,13 +96,18 @@ function DetectionHistory({ analysisHistory = [] }) {
         </div>
 
         <div className="history-summary-card">
-          <span>Vehicles Processed</span>
+          <span>Motorcycles Processed</span>
           <strong>{vehiclesProcessed.toLocaleString()}</strong>
         </div>
 
         <div className="history-summary-card">
-          <span>Violations Found</span>
-          <strong>{violationsFound}</strong>
+          <span>Confirmed No-Helmet</span>
+          <strong>{confirmedViolations}</strong>
+        </div>
+
+        <div className="history-summary-card history-summary-card--review">
+          <span>Triple-Riding Estimates · Review</span>
+          <strong>{reviewAlerts}</strong>
         </div>
       </div>
 
@@ -102,7 +116,7 @@ function DetectionHistory({ analysisHistory = [] }) {
         <div className="history-toolbar">
           <div>
             <span className="page-label">RECENT ANALYSIS</span>
-            <h3>Detection Records</h3>
+            <h3>Image Analysis Records</h3>
           </div>
 
           <div className="history-controls">
@@ -123,7 +137,6 @@ function DetectionHistory({ analysisHistory = [] }) {
             >
               <option value="All">All Status</option>
               <option value="Completed">Completed</option>
-              <option value="Processing">Processing</option>
             </select>
           </div>
         </div>
@@ -135,9 +148,9 @@ function DetectionHistory({ analysisHistory = [] }) {
               <tr>
                 <th>ID</th>
                 <th>Media File</th>
-                <th>Violations</th>
-                <th>Vehicles</th>
-                <th>Detected</th>
+                <th>AI Finding Summary</th>
+                <th>Motorcycles</th>
+                <th>Confirmed No-Helmet</th>
                 <th>Confidence</th>
                 <th>Date & Time</th>
                 <th>Status</th>
@@ -159,7 +172,7 @@ function DetectionHistory({ analysisHistory = [] }) {
                         </div>
 
                         <div>
-                          <strong>{item.fileName}</strong>
+                          <strong title={item.fileName}>{item.fileName}</strong>
                           <span>{item.type}</span>
                         </div>
                       </div>
@@ -219,8 +232,8 @@ function DetectionHistory({ analysisHistory = [] }) {
                       <strong>No records found</strong>
 
                       <p>
-                        No image analyses have been saved yet, or the current
-                        search and status filters found no matches.
+                        {!historyLoaded ? "Loading shared history…" : "No image analyses have been saved yet, or the current"}{historyLoaded && " "}
+                        {historyLoaded && "search and status filters found no matches."}
                       </p>
                     </div>
                   </td>
@@ -236,18 +249,7 @@ function DetectionHistory({ analysisHistory = [] }) {
             Showing <strong>{filteredHistory.length}</strong> of{" "}
             <strong>{analysisHistory.length}</strong> analyses
           </span>
-
-          <div className="history-page-info">
-            <button type="button" disabled>
-              ←
-            </button>
-
-            <span className="active-page-number">1</span>
-
-            <button type="button" disabled>
-              →
-            </button>
-          </div>
+          <small>Confirmed counts include no-helmet detections. Triple-riding counts are estimates and need review.</small>
         </div>
       </div>
 
@@ -281,7 +283,7 @@ function DetectionHistory({ analysisHistory = [] }) {
                     <td><span className="history-violation">{record.violation_type}</span></td>
                     <td>{record.bike_id == null ? "N/A" : `Bike ${record.bike_id}`}</td>
                     <td>{record.number_plate === "NOT_AVAILABLE" ? "Unreadable / unavailable" : record.number_plate}</td>
-                    <td>{record.image_path?.split(/[\\/]/).pop() || "N/A"}</td>
+                    <td><span className="table-file-name" title={record.image_path?.split(/[\\/]/).pop() || "N/A"}>{record.image_path?.split(/[\\/]/).pop() || "N/A"}</span></td>
                     <td>{record.timestamp || "N/A"}</td>
                   </tr>
                 )) : (
