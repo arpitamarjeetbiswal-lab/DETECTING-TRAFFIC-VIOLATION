@@ -31,9 +31,7 @@ CORS(app, resources={
 BASE_DIR = Path(__file__).resolve().parents[2]
 
 DB_PATH = BASE_DIR / "ai" / "traffic_violations.db"
-
 UPLOAD_FOLDER = BASE_DIR / "ai" / "uploads"
-
 OUTPUT_FOLDER = BASE_DIR / "ai" / "outputs" / "annotated"
 
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
@@ -46,15 +44,15 @@ app.config["MAX_CONTENT_LENGTH"] = 21 * 1024 * 1024
 # LOAD AI MODELS
 # ==========================================
 
-HELMET_MODEL_PATH = (
-    BASE_DIR / "ai" / "models" / "best.pt"
-)
+HELMET_MODEL_PATH = BASE_DIR / "ai" / "models" / "best.pt"
 
 helmet_model = YOLO(str(HELMET_MODEL_PATH))
 
-# Detects motorcycles and people.
-OBJECT_MODEL_PATH = BASE_DIR / "yolov8n.pt"
-object_model = YOLO(str(OBJECT_MODEL_PATH))
+# General object detector: person and motorcycle.
+object_model = YOLO(str(BASE_DIR / "yolov8n.pt"))
+
+print("HELMET MODEL CLASSES:", helmet_model.names)
+print("OBJECT MODEL CLASSES:", object_model.names)
 
 
 # ==========================================
@@ -254,9 +252,7 @@ def get_violations():
             ORDER BY id DESC
         """).fetchall()
 
-        return jsonify([
-            dict(row) for row in rows
-        ])
+        return jsonify([dict(row) for row in rows])
 
     finally:
         conn.close()
@@ -311,10 +307,7 @@ def review_violation(record_id):
 # SERVE ANNOTATED IMAGES
 # ==========================================
 
-@app.route(
-    "/api/annotated/<filename>",
-    methods=["GET"]
-)
+@app.route("/api/annotated/<filename>", methods=["GET"])
 def get_annotated_image(filename):
 
     return send_from_directory(
@@ -335,7 +328,6 @@ def analyze_image():
     # --------------------------------------
 
     if "file" not in request.files:
-
         return jsonify({
             "error": "No file uploaded"
         }), 400
@@ -343,22 +335,13 @@ def analyze_image():
     uploaded_file = request.files["file"]
 
     if not uploaded_file.filename:
-
         return jsonify({
             "error": "No file selected"
         }), 400
 
-    extension = Path(
-        uploaded_file.filename
-    ).suffix.lower()
+    extension = Path(uploaded_file.filename).suffix.lower()
 
-    if extension not in [
-        ".jpg",
-        ".jpeg",
-        ".png",
-        ".webp"
-    ]:
-
+    if extension not in [".jpg", ".jpeg", ".png"]:
         return jsonify({
             "error": "Only JPG, PNG, and WebP images are allowed"
         }), 400
@@ -368,30 +351,21 @@ def analyze_image():
     # --------------------------------------
 
     image_id = uuid4().hex
-
     filename = f"{image_id}{extension}"
-
     file_path = UPLOAD_FOLDER / filename
 
     uploaded_file.save(str(file_path))
     image_digest = hashlib.sha256(file_path.read_bytes()).hexdigest()
 
-    # Read the original image.
-    original_image = cv2.imread(
-        str(file_path)
-    )
+    original_image = cv2.imread(str(file_path))
 
     if original_image is None:
-
         file_path.unlink(missing_ok=True)
 
         return jsonify({
             "error": "Invalid or unreadable image"
         }), 400
 
-    analysis_started_at = perf_counter()
-
-    # Work on a copy for drawing.
     annotated_image = original_image.copy()
 
     timestamp = datetime.now().strftime(
@@ -412,47 +386,84 @@ def analyze_image():
     )
 
     detections = []
-
     helmet_violations = 0
 
-    for box in helmet_results[0].boxes:
+    print("\n========== HELMET DETECTIONS ==========")
 
-        class_id = int(
-            box.cls.item()
-        )
+    if helmet_results[0].boxes is not None:
 
-        confidence = float(
-            box.conf.item()
-        )
+        for box in helmet_results[0].boxes:
 
-        class_name = helmet_model.names[
-            class_id
-        ]
+            class_id = int(box.cls.item())
+            confidence = float(box.conf.item())
 
-        x1, y1, x2, y2 = map(
-            int,
-            box.xyxy[0].tolist()
-        )
+            class_name = helmet_model.names[class_id]
 
-        is_violation = (
-            class_name == "Without Helmet"
-        )
+            print(
+                class_name,
+                round(confidence * 100, 2),
+                "%"
+            )
 
-        if is_violation:
-            helmet_violation_candidates.append({
-                "box": (x1, y1, x2, y2),
-                "detection_index": len(detections)
+            x1, y1, x2, y2 = map(
+                int,
+                box.xyxy[0].tolist()
+            )
+
+            is_violation = (
+                class_name == "Without Helmet"
+            )
+
+            if is_violation:
+
+                helmet_violations += 1
+                color = (0, 0, 255)
+
+                database_records.append((
+                    None,
+                    "NO HELMET",
+                    timestamp,
+                    str(file_path),
+                    "NOT_AVAILABLE"
+                ))
+
+            else:
+
+                color = (0, 255, 0)
+
+            cv2.rectangle(
+                annotated_image,
+                (x1, y1),
+                (x2, y2),
+                color,
+                2
+            )
+
+            label = (
+                f"{class_name} "
+                f"{confidence * 100:.1f}%"
+            )
+
+            cv2.putText(
+                annotated_image,
+                label,
+                (x1, max(20, y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                color,
+                2
+            )
+
+            detections.append({
+                "violation_type": class_name,
+                "confidence": round(
+                    confidence * 100,
+                    2
+                )
             })
 
-        detections.append({
-            "violation_type": class_name,
-            "confidence": round(
-                confidence * 100,
-                2
-            ),
-            "box": [x1, y1, x2, y2],
-            "violation_confirmed": None if not is_violation else False
-        })
+    print("Total helmet violations:", helmet_violations)
+    print("=======================================\n")
 
     # ======================================
     # 2. MOTORCYCLE / PERSON DETECTION
@@ -474,23 +485,13 @@ def analyze_image():
 
     for box in object_results[0].boxes:
 
-        class_id = int(
-            box.cls.item()
-        )
+        class_id = int(box.cls.item())
+        confidence = float(box.conf.item())
 
-        confidence = float(
-            box.conf.item()
-        )
-
-        class_name = object_model.names[
-            class_id
-        ]
+        class_name = object_model.names[class_id]
 
         coordinates = tuple(
-            map(
-                int,
-                box.xyxy[0].tolist()
-            )
+            map(int, box.xyxy[0].tolist())
         )
 
         item = {
@@ -499,28 +500,57 @@ def analyze_image():
         }
 
         if class_name == "motorcycle":
-
             motorcycles.append(item)
 
         elif class_name == "person":
-
             persons.append(item)
 
-    # ======================================
-    # 3. NUMBER-PLATE DETECTION AND OCR
-    # ======================================
-
-    plate_results = detect_and_read_plates(
-        original_image,
-        motorcycle_boxes=[
-            motorcycle["box"]
-            for motorcycle in motorcycles
-        ]
-    )
+    print("Motorcycles detected:", len(motorcycles))
+    print("Persons detected:", len(persons))
 
     # ======================================
-    # 4. TRIPLE-RIDING DETECTION
+    # 3. TRIPLE-RIDING ASSOCIATION
     # ======================================
+
+    bike_results = []
+    triple_riding_count = 0
+
+    # A person is assigned to no more than one bike.
+    assigned_persons = set()
+
+    for bike_index, motorcycle in enumerate(
+        motorcycles,
+        start=1
+    ):
+
+        bx1, by1, bx2, by2 = motorcycle["box"]
+
+        bike_width = max(1, bx2 - bx1)
+        bike_height = max(1, by2 - by1)
+
+        bike_center_x = (bx1 + bx2) / 2
+
+        associated_persons = []
+        association_debug = []
+
+        for person_index, person in enumerate(persons):
+
+            if person_index in assigned_persons:
+                continue
+
+            px1, py1, px2, py2 = person["box"]
+
+            person_width = max(1, px2 - px1)
+            person_height = max(1, py2 - py1)
+
+            person_center_x = (px1 + px2) / 2
+            person_bottom_y = py2
+
+            # Horizontal overlap.
+            overlap_x = max(
+                0,
+                min(px2, bx2) - max(px1, bx1)
+            )
 
     bike_results = []
     triple_riding_count = 0
@@ -555,38 +585,45 @@ def analyze_image():
             center_distance = abs(person_center_x - bike_center_x) / roi_width
             bottom_offset = abs(py2 - by2) / bike_height
 
-            # Bodies should overlap the motorcycle horizontally and reach
-            # the motorcycle's lower half. The wider vertical window allows
-            # seated riders while rejecting distant people in the background.
-            if (
-                overlap_ratio < 0.28
-                or center_distance > 0.75
-                or py2 < roi_y1 - bike_height * 0.15
-                or py2 > roi_y2
-                or person_height < bike_height * 0.22
-            ):
-                continue
+            horizontal_match = (
+                overlap_ratio >= 0.30
+                and abs(person_center_x - bike_center_x)
+                <= bike_width * 0.75
+            )
 
-            horizontal_score = min(1.0, overlap_ratio / 0.65)
-            center_score = max(0.0, 1.0 - center_distance / 0.75)
-            vertical_score = max(0.0, 1.0 - bottom_offset / 0.75)
-            score = (
-                0.45 * horizontal_score
-                + 0.35 * center_score
-                + 0.20 * vertical_score
+            # Vertical alignment.
+            vertical_match = (
+                by1 - bike_height * 0.75
+                <= person_bottom_y
+                <= by2 + bike_height * 0.15
+            )
+
+            # Relative person size.
+            size_match = (
+                person_height >= bike_height * 0.40
             )
             candidate_scores.append((score, bike_index))
 
-        candidate_scores.sort(reverse=True)
-        if candidate_scores:
-            # If two motorcycles are equally plausible, leave the person
-            # unassigned so the app does not manufacture a review alert.
-            if (
-                len(candidate_scores) > 1
-                and candidate_scores[0][0] - candidate_scores[1][0] < 0.08
-            ):
-                continue
-            person_candidates[person_index] = candidate_scores[0][1]
+            is_associated = (
+                horizontal_match
+                and vertical_match
+                and size_match
+            )
+
+            association_debug.append({
+                "person_index": person_index + 1,
+                "associated": is_associated,
+                "horizontal_match": horizontal_match,
+                "vertical_match": vertical_match,
+                "size_match": size_match,
+                "overlap_ratio": round(
+                    overlap_ratio,
+                    3
+                )
+            })
+
+            if is_associated:
+                associated_persons.append(person_index)
 
     for person_index, bike_index in person_candidates.items():
         person_to_bike[person_index] = bike_index
@@ -600,159 +637,32 @@ def analyze_image():
 
         person_count = len(associated_persons)
 
-        # Geometric matching alone cannot confirm
-        # a traffic violation. Flag possible cases
-        # for human review instead.
-        needs_review = person_count >= 3
+        # Three or more associated persons.
+        is_triple_riding = person_count >= 3
+
+        if is_triple_riding:
+            triple_riding_count += 1
 
         if needs_review:
             triple_riding_count += 1
 
         status = (
-            "Needs Review"
-            if needs_review
-            else "No potential triple-riding alert"
+            "Triple Riding Detected"
+            if is_triple_riding
+            else "No Triple Riding"
         )
 
         bike_results.append({
             "bike_index": bike_index,
             "box": motorcycle["box"],
             "person_count": person_count,
-            "status": status
+            "status": status,
+            "association_debug": association_debug
         })
 
-    # Link a plate to a motorcycle only when most of the plate box
-    # falls within that motorcycle's detected box.
-    for plate in plate_results:
-
-        motorcycle_index = match_box_to_motorcycle(
-            plate["box"],
-            motorcycles
-        )
-
-        plate["motorcycle_index"] = motorcycle_index
-        plate["association_status"] = (
-            "MATCHED"
-            if motorcycle_index is not None
-            else "UNMATCHED"
-        )
-
-    # Store possible triple-riding cases for review, not as confirmed guilt.
-    for bike in bike_results:
-
-        if bike["status"] != "Needs Review":
-            continue
-
-        bike_plates = [
-            plate
-            for plate in plate_results
-            if (
-                plate["motorcycle_index"] == bike["bike_index"]
-                and plate["status"] == "REVIEW_REQUIRED"
-                and plate["plate_number"]
-            )
-        ]
-
-        database_records.append((
-            bike["bike_index"],
-            "POSSIBLE TRIPLE RIDING",
-            timestamp,
-            str(file_path),
-            bike_plates[0]["plate_number"]
-            if len(bike_plates) == 1
-            else "NOT_AVAILABLE"
-        ))
-
-    # Associate each no-helmet head detection with its rider and then
-    # with that motorcycle's sole readable plate, when unambiguous.
-    for candidate in helmet_violation_candidates:
-
-        motorcycle_index = match_head_to_motorcycle(
-            candidate["box"],
-            persons,
-            person_to_bike
-        )
-
-        readable_plates = [
-            plate
-            for plate in plate_results
-            if (
-                plate["motorcycle_index"] == motorcycle_index
-                and plate["status"] == "REVIEW_REQUIRED"
-                and plate["plate_number"]
-            )
-        ]
-
-        associated_plate = (
-            readable_plates[0]
-            if motorcycle_index is not None
-            and len(readable_plates) == 1
-            else None
-        )
-
-        violation_confirmed = motorcycle_index is not None
-
-        detections[candidate["detection_index"]].update({
-            "motorcycle_index": motorcycle_index,
-            "violation_confirmed": violation_confirmed,
-            "number_plate": (
-                associated_plate["plate_number"]
-                if associated_plate
-                else None
-            ),
-            "plate_association_status": (
-                "MATCHED"
-                if associated_plate
-                else "UNAVAILABLE"
-            )
-        })
-
-        if violation_confirmed:
-            helmet_violations += 1
-            database_records.append((
-                motorcycle_index,
-                "NO HELMET",
-                timestamp,
-                str(file_path),
-                (
-                    associated_plate["plate_number"]
-                    if associated_plate
-                    else "NOT_AVAILABLE"
-                )
-            ))
-
-    # Draw helmet detections after rider-to-bike association so that
-    # unassociated alerts are visibly marked for review, not as confirmed.
-    for detection in detections:
-
-        x1, y1, x2, y2 = detection["box"]
-        is_no_helmet = detection["violation_type"] == "Without Helmet"
-
-        if is_no_helmet and detection["violation_confirmed"]:
-            color = (0, 0, 255)
-            label = "NO HELMET"
-        elif is_no_helmet:
-            color = (0, 165, 255)
-            label = "REVIEW: BIKE NOT MATCHED"
-        else:
-            color = (0, 255, 0)
-            label = detection["violation_type"]
-
-        cv2.rectangle(
-            annotated_image,
-            (x1, y1),
-            (x2, y2),
-            color,
-            2
-        )
-        cv2.putText(
-            annotated_image,
-            f"{label} {detection['confidence']:.1f}%",
-            (x1, max(20, y1 - 8)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            color,
-            2
+        print(
+            f"Bike {bike_index}: "
+            f"{person_count} associated persons - {status}"
         )
 
     # ======================================
@@ -764,11 +674,9 @@ def analyze_image():
         bx1, by1, bx2, by2 = bike["box"]
 
         is_triple = (
-            bike["status"] == "Needs Review"
+            bike["status"] == "Triple Riding Detected"
         )
 
-        # Red for triple riding.
-        # Green for other detected motorcycles.
         color = (
             (0, 0, 255)
             if is_triple
@@ -807,7 +715,6 @@ def analyze_image():
 
         x1, y1, x2, y2 = person["box"]
 
-        # Blue in OpenCV BGR format.
         cv2.rectangle(
             annotated_image,
             (x1, y1),
@@ -860,13 +767,9 @@ def analyze_image():
     # 8. SAVE ANNOTATED IMAGE
     # ======================================
 
-    annotated_filename = (
-        f"{image_id}_result.jpg"
-    )
+    annotated_filename = f"{image_id}_result.jpg"
 
-    annotated_path = (
-        OUTPUT_FOLDER / annotated_filename
-    )
+    annotated_path = OUTPUT_FOLDER / annotated_filename
 
     saved = cv2.imwrite(
         str(annotated_path),
@@ -874,16 +777,15 @@ def analyze_image():
     )
 
     if not saved:
-
         return jsonify({
             "error": "Could not save annotated image"
         }), 500
 
     # ======================================
-    # 9. SAVE VIOLATIONS IN SQLITE
+    # 7. SAVE HELMET VIOLATIONS
     # ======================================
 
-    records_saved = save_violations(database_records, image_digest)
+    save_violations(database_records)
 
     # ======================================
     # 10. RETURN RESULTS TO REACT
@@ -908,21 +810,15 @@ def analyze_image():
 
         "detections": detections,
 
-        "total_detections": len(
-            detections
-        ),
+        "total_detections": len(detections),
 
         "helmet_violations": helmet_violations,
 
         "triple_riding": triple_riding_count,
 
-        "motorcycles_detected": len(
-            motorcycles
-        ),
+        "motorcycles_detected": len(motorcycles),
 
-        "persons_detected": len(
-            persons
-        ),
+        "persons_detected": len(persons),
 
         "plates_detected": len(
             plate_results
@@ -958,14 +854,8 @@ def analyze_image():
 
 if __name__ == "__main__":
 
-    print(
-        "Starting Traffic Violation Flask API..."
-    )
-
-    print(
-        "Database:",
-        DB_PATH
-    )
+    print("Starting Traffic Violation Flask API...")
+    print("Database:", DB_PATH)
 
     app.run(
         host="127.0.0.1",
