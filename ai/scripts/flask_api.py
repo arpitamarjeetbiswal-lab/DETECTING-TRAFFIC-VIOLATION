@@ -643,9 +643,6 @@ def analyze_image():
         if is_triple_riding:
             triple_riding_count += 1
 
-        if needs_review:
-            triple_riding_count += 1
-
         status = (
             "Triple Riding Detected"
             if is_triple_riding

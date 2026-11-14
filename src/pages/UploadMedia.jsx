@@ -671,7 +671,11 @@ function UploadMedia({
                   analysisResult.bikeResults.map((bike) => (
 
                     <div
-                      className="violation-result"
+                      className={`violation-result ${
+                        Number(bike.person_count) >= 3
+                          ? "violation-result--alert"
+                          : "violation-result--clear"
+                      }`}
                       key={bike.bike_index}
                     >
 
@@ -682,7 +686,9 @@ function UploadMedia({
                       </span>
 
                       <strong>
-                        {bike.status}
+                        {Number(bike.person_count) >= 3
+                          ? "Triple Riding Detected"
+                          : "No Triple Riding"}
                       </strong>
 
                     </div>
@@ -692,8 +698,7 @@ function UploadMedia({
                 <small>
                   Rider counts are geometric estimates from detected
                   person and motorcycle boxes. Occlusion can cause missed
-                  riders or bystanders to be associated; possible cases need
-                  review.
+                  riders or bystanders to be associated.
                 </small>
 
               </div>
