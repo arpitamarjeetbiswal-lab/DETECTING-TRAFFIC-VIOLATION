@@ -193,8 +193,8 @@ function TrafficMonitoring({
 
               <div className="model">
                 <div>
-                  <strong>Triple Riding</strong>
-                  <span>Possible cases are flagged for review</span>
+                  <strong>Triple Riding Estimate</strong>
+                  <span>Geometric person-to-bike estimate; possible cases need review</span>
                 </div>
                 <span className="model-status">Review alert</span>
               </div>
@@ -294,7 +294,7 @@ function TrafficMonitoring({
             <span>04</span>
             <div>
               <strong>Generate Results</strong>
-              <p>Prepare analytics</p>
+              <p>Prepare image analysis results</p>
             </div>
           </div>
         </div>

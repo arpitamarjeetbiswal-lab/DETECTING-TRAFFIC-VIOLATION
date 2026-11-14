@@ -20,10 +20,10 @@ function UploadMedia({
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState("");
 
-  const MAX_FILE_SIZE = 100 * 1024 * 1024;
+  const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
   // Current backend supports images only.
-  const allowedTypes = ["image/jpeg", "image/png"];
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
 
   // ==========================================
   // HANDLE IMAGE SELECTION
@@ -37,13 +37,13 @@ function UploadMedia({
     setError("");
 
     if (!allowedTypes.includes(selected.type)) {
-      setError("Only JPG and PNG images are supported.");
+      setError("Only JPG, PNG, and WebP images are supported.");
       event.target.value = "";
       return;
     }
 
     if (selected.size > MAX_FILE_SIZE) {
-      setError("File size must be less than 100 MB.");
+      setError("File size must be 20 MB or smaller.");
       event.target.value = "";
       return;
     }
@@ -105,7 +105,7 @@ function UploadMedia({
     }
 
     if (!allowedTypes.includes(selectedFile.type)) {
-      setError("Only JPG and PNG images are supported.");
+      setError("Only JPG, PNG, and WebP images are supported.");
       return;
     }
 
@@ -208,6 +208,9 @@ function UploadMedia({
         plateResults: Array.isArray(data.plate_results)
           ? data.plate_results
           : [],
+
+        duplicateImage: Boolean(data.duplicate_image),
+        recordsSaved: Number(data.records_saved || 0),
       };
 
       // ======================================
@@ -371,7 +374,7 @@ function UploadMedia({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".jpg,.jpeg,.png"
+              accept=".jpg,.jpeg,.png,.webp"
               onChange={handleChange}
               disabled={analysisStatus === "processing"}
               style={{ display: "none" }}
@@ -392,10 +395,11 @@ function UploadMedia({
                 <div className="upload-formats">
                   <span>JPG</span>
                   <span>PNG</span>
+                  <span>WEBP</span>
                 </div>
 
                 <small>
-                  Maximum file size: 100 MB
+                  Maximum file size: 20 MB
                 </small>
               </>
             ) : (
@@ -551,6 +555,13 @@ function UploadMedia({
                 </small>
               )}
 
+              {analysisResult.duplicateImage && (
+                <p className="duplicate-analysis-note" role="status">
+                  This exact image was analyzed before. Results are shown again,
+                  but duplicate violation rows were not added to the database.
+                </p>
+              )}
+
               {/* RESULT STATISTICS */}
               <div className="result-stats">
 
@@ -679,8 +690,10 @@ function UploadMedia({
                 )}
 
                 <small>
-                  Rider counts are estimates based on
-                  detected person positions.
+                  Rider counts are geometric estimates from detected
+                  person and motorcycle boxes. Occlusion can cause missed
+                  riders or bystanders to be associated; possible cases need
+                  review.
                 </small>
 
               </div>
@@ -841,17 +854,17 @@ function UploadMedia({
 
             <div>
               <strong>
-                Triple Riding
+                Triple Riding Estimate
               </strong>
 
               <span>
-                YOLO motorcycle/person association
-                connected
+                Geometric person-to-bike association; possible cases
+                require review.
               </span>
             </div>
 
             <span className="model-status">
-              ✓
+              Estimate
             </span>
 
           </div>

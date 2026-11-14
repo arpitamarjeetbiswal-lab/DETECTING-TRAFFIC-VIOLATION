@@ -1,6 +1,7 @@
 from uuid import uuid4
 from datetime import datetime
 from pathlib import Path
+import hashlib
 import sqlite3
 from time import perf_counter
 
@@ -38,7 +39,7 @@ OUTPUT_FOLDER = BASE_DIR / "ai" / "outputs" / "annotated"
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
-app.config["MAX_CONTENT_LENGTH"] = 101 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 21 * 1024 * 1024
 
 
 # ==========================================
@@ -60,27 +61,79 @@ object_model = YOLO(str(OBJECT_MODEL_PATH))
 # DATABASE HELPER
 # ==========================================
 
-def save_violations(records):
-
-    if not records:
-        return
+def save_violations(records, image_digest):
 
     conn = sqlite3.connect(DB_PATH)
 
     try:
-        conn.executemany("""
-            INSERT INTO violations
-            (
-                bike_id,
-                violation_type,
-                timestamp,
-                image_path,
-                number_plate
+        # An identical image should not create a second copy of the same
+        # violation rows when someone uploads it repeatedly for testing.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS processed_image_hashes (
+                image_sha256 TEXT PRIMARY KEY,
+                processed_at TEXT NOT NULL
             )
-            VALUES (?, ?, ?, ?, ?)
-        """, records)
+        """)
+
+        # On first use, seed hashes from historical source images still on
+        # disk so re-uploading an older test image does not duplicate rows.
+        existing_hashes = conn.execute(
+            "SELECT COUNT(*) FROM processed_image_hashes"
+        ).fetchone()[0]
+        if existing_hashes == 0:
+            old_paths = conn.execute(
+                "SELECT DISTINCT image_path FROM violations "
+                "WHERE image_path IS NOT NULL AND image_path != ''"
+            ).fetchall()
+            historical_hashes = []
+            for (old_path,) in old_paths:
+                candidate = Path(old_path)
+                if not candidate.is_absolute():
+                    candidate = BASE_DIR / candidate
+                try:
+                    if candidate.is_file():
+                        historical_hashes.append((
+                            hashlib.sha256(candidate.read_bytes()).hexdigest(),
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        ))
+                except OSError:
+                    # A deleted historical image cannot be fingerprinted.
+                    continue
+            if historical_hashes:
+                conn.executemany(
+                    "INSERT OR IGNORE INTO processed_image_hashes "
+                    "(image_sha256, processed_at) VALUES (?, ?)",
+                    historical_hashes,
+                )
+
+        inserted = conn.execute(
+            """
+            INSERT OR IGNORE INTO processed_image_hashes
+                (image_sha256, processed_at)
+            VALUES (?, ?)
+            """,
+            (image_digest, datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+
+        if inserted.rowcount == 0:
+            conn.rollback()
+            return False
+
+        if records:
+            conn.executemany("""
+                INSERT INTO violations
+                (
+                    bike_id,
+                    violation_type,
+                    timestamp,
+                    image_path,
+                    number_plate
+                )
+                VALUES (?, ?, ?, ?, ?)
+            """, records)
 
         conn.commit()
+        return True
 
     finally:
         conn.close()
@@ -302,11 +355,12 @@ def analyze_image():
     if extension not in [
         ".jpg",
         ".jpeg",
-        ".png"
+        ".png",
+        ".webp"
     ]:
 
         return jsonify({
-            "error": "Only JPG and PNG images are allowed"
+            "error": "Only JPG, PNG, and WebP images are allowed"
         }), 400
 
     # --------------------------------------
@@ -320,6 +374,7 @@ def analyze_image():
     file_path = UPLOAD_FOLDER / filename
 
     uploaded_file.save(str(file_path))
+    image_digest = hashlib.sha256(file_path.read_bytes()).hexdigest()
 
     # Read the original image.
     original_image = cv2.imread(
@@ -405,7 +460,12 @@ def analyze_image():
 
     object_results = object_model.predict(
         source=original_image,
-        conf=0.35,
+        # A lower threshold helps recover partially occluded riders in busy
+        # scenes. Keep rider-to-bike matching conservative below to reject
+        # the extra background-person detections this can introduce.
+        conf=0.20,
+        imgsz=768,
+        classes=[0, 3],  # COCO person and motorcycle classes only.
         verbose=False
     )
 
@@ -481,26 +541,34 @@ def analyze_image():
             bx1, by1, bx2, by2 = motorcycle["box"]
             bike_width = max(1, bx2 - bx1)
             bike_height = max(1, by2 - by1)
-            bike_center_x = (bx1 + bx2) / 2
-            overlap_x = max(0, min(px2, bx2) - max(px1, bx1))
+            # The detector box often covers the scooter frame but clips a
+            # pillion rider's torso. Expand the bike ROI modestly while
+            # retaining a vertical gate to avoid nearby pedestrians.
+            roi_x1 = bx1 - bike_width * 0.20
+            roi_x2 = bx2 + bike_width * 0.20
+            roi_y1 = by1 - bike_height * 0.20
+            roi_y2 = by2 + bike_height * 0.12
+            roi_width = max(1.0, roi_x2 - roi_x1)
+            bike_center_x = (roi_x1 + roi_x2) / 2
+            overlap_x = max(0, min(px2, roi_x2) - max(px1, roi_x1))
             overlap_ratio = overlap_x / person_width
-            center_distance = abs(person_center_x - bike_center_x) / bike_width
+            center_distance = abs(person_center_x - bike_center_x) / roi_width
             bottom_offset = abs(py2 - by2) / bike_height
 
             # Bodies should overlap the motorcycle horizontally and reach
             # the motorcycle's lower half. The wider vertical window allows
             # seated riders while rejecting distant people in the background.
             if (
-                overlap_ratio < 0.30
-                or center_distance > 0.70
-                or py2 < by1 - bike_height * 0.35
-                or py2 > by2 + bike_height * 0.12
-                or person_height < bike_height * 0.35
+                overlap_ratio < 0.28
+                or center_distance > 0.75
+                or py2 < roi_y1 - bike_height * 0.15
+                or py2 > roi_y2
+                or person_height < bike_height * 0.22
             ):
                 continue
 
-            horizontal_score = min(1.0, overlap_ratio / 0.70)
-            center_score = max(0.0, 1.0 - center_distance / 0.70)
+            horizontal_score = min(1.0, overlap_ratio / 0.65)
+            center_score = max(0.0, 1.0 - center_distance / 0.75)
             vertical_score = max(0.0, 1.0 - bottom_offset / 0.75)
             score = (
                 0.45 * horizontal_score
@@ -543,7 +611,7 @@ def analyze_image():
         status = (
             "Needs Review"
             if needs_review
-            else "No triple riding confirmed"
+            else "No potential triple-riding alert"
         )
 
         bike_results.append({
@@ -815,9 +883,7 @@ def analyze_image():
     # 9. SAVE VIOLATIONS IN SQLITE
     # ======================================
 
-    save_violations(
-        database_records
-    )
+    records_saved = save_violations(database_records, image_digest)
 
     # ======================================
     # 10. RETURN RESULTS TO REACT
@@ -869,6 +935,10 @@ def analyze_image():
         "confirmed_violations": confirmed_violations,
 
         "review_alerts": review_alerts,
+
+        "duplicate_image": not records_saved,
+
+        "records_saved": len(database_records) if records_saved else 0,
 
         # Keep the legacy field, now limited to confirmed violations.
         "total_violations": confirmed_violations,

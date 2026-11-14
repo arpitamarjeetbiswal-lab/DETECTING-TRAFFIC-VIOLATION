@@ -43,3 +43,14 @@ ai/traffic_violations.db
 *.njsproj
 *.sln
 *.sw?
+
+# Local demo/test artifacts (keep out of commits)
+/.codex-build/
+/Violation of traffic rules hi-res stock photography and images - Alamy_files/
+/ai/test_images/
+/ai/traffic_violations.local-backup.db
+/ai/models/license_plate_detector.pt
+/ai/models/license_plate_yolov8n_pretrained.pt
+/ai/scripts/flask_api_backup.py
+/*.jpg
+/*.webp

@@ -147,16 +147,6 @@ function App() {
       return;
     }
 
-    // Analytics
-    if (
-      query.includes("analytics") ||
-      query.includes("chart") ||
-      query.includes("graph")
-    ) {
-      setActivePage("analytics");
-      return;
-    }
-
     // Monitoring
     if (
       query.includes("monitor") ||
@@ -215,9 +205,6 @@ function App() {
 
       case "violations":
         return <Violations />;
-
-      case "analytics":
-        return <Analytics analysisHistory={analysisHistory} />;
 
       case "history":
         return <DetectionHistory analysisHistory={analysisHistory} />;
