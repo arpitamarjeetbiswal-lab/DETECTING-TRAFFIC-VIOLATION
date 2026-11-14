@@ -2577,8 +2577,15 @@ box-shadow 0.2s ease;
 }
 
 .violation-result strong {
-  color: #f87171;
   font-size: 16px;
+}
+
+.violation-result--alert strong {
+  color: #f87171;
+}
+
+.violation-result--clear strong {
+  color: #34d399;
 }
 
 .monitoring-page {

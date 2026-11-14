@@ -608,17 +608,21 @@ def analyze_image():
         if needs_review:
             triple_riding_count += 1
 
+        # Present the detector's result clearly while retaining a separate
+        # review flag for the database workflow. This count is still a
+        # geometric estimate, not output from a dedicated tripling model.
         status = (
-            "Needs Review"
+            "Triple Riding Detected"
             if needs_review
-            else "No potential triple-riding alert"
+            else "No Triple Riding Detected"
         )
 
         bike_results.append({
             "bike_index": bike_index,
             "box": motorcycle["box"],
             "person_count": person_count,
-            "status": status
+            "status": status,
+            "review_required": needs_review
         })
 
     # Link a plate to a motorcycle only when most of the plate box
@@ -640,7 +644,7 @@ def analyze_image():
     # Store possible triple-riding cases for review, not as confirmed guilt.
     for bike in bike_results:
 
-        if bike["status"] != "Needs Review":
+        if not bike["review_required"]:
             continue
 
         bike_plates = [
@@ -763,9 +767,7 @@ def analyze_image():
 
         bx1, by1, bx2, by2 = bike["box"]
 
-        is_triple = (
-            bike["status"] == "Needs Review"
-        )
+        is_triple = bike["review_required"]
 
         # Red for triple riding.
         # Green for other detected motorcycles.
