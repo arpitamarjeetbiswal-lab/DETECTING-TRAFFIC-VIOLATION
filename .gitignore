@@ -11,6 +11,27 @@ node_modules
 dist
 dist-ssr
 *.local
+.venv/
+.venv_*/
+__pycache__/
+*.py[cod]
+
+# Local uploads, datasets, and generated inference/training artifacts
+ai/uploads/
+ai/outputs/
+ai/datasets/
+/runs/
+ai/runs/*
+!ai/runs/plate_detection/
+ai/runs/plate_detection/*
+!ai/runs/plate_detection/test_training_v2/
+ai/runs/plate_detection/test_training_v2/*
+!ai/runs/plate_detection/test_training_v2/weights/
+ai/runs/plate_detection/test_training_v2/weights/*
+!ai/runs/plate_detection/test_training_v2/weights/best.pt
+
+# Local database contains machine-specific test records
+ai/traffic_violations.db
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +43,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local demo/test artifacts (keep out of commits)
+/.codex-build/
+/Violation of traffic rules hi-res stock photography and images - Alamy_files/
+/ai/test_images/
+/ai/traffic_violations.local-backup.db
+/ai/models/license_plate_detector.pt
+/ai/models/license_plate_yolov8n_pretrained.pt
+/ai/scripts/flask_api_backup.py
+/*.jpg
+/*.webp

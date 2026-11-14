@@ -1,7 +1,11 @@
 from uuid import uuid4
 from datetime import datetime
 from pathlib import Path
+import hashlib
 import sqlite3
+from time import perf_counter
+
+from plate_ocr_service import detect_and_read_plates
 
 import cv2
 from flask import Flask, jsonify, request, send_from_directory
@@ -33,7 +37,7 @@ OUTPUT_FOLDER = BASE_DIR / "ai" / "outputs" / "annotated"
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
-app.config["MAX_CONTENT_LENGTH"] = 101 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 21 * 1024 * 1024
 
 
 # ==========================================
@@ -55,30 +59,161 @@ print("OBJECT MODEL CLASSES:", object_model.names)
 # DATABASE HELPER
 # ==========================================
 
-def save_violations(records):
-
-    if not records:
-        return
+def save_violations(records, image_digest):
 
     conn = sqlite3.connect(DB_PATH)
 
     try:
-        conn.executemany("""
-            INSERT INTO violations
-            (
-                bike_id,
-                violation_type,
-                timestamp,
-                image_path,
-                number_plate
+        # An identical image should not create a second copy of the same
+        # violation rows when someone uploads it repeatedly for testing.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS processed_image_hashes (
+                image_sha256 TEXT PRIMARY KEY,
+                processed_at TEXT NOT NULL
             )
-            VALUES (?, ?, ?, ?, ?)
-        """, records)
+        """)
+
+        # On first use, seed hashes from historical source images still on
+        # disk so re-uploading an older test image does not duplicate rows.
+        existing_hashes = conn.execute(
+            "SELECT COUNT(*) FROM processed_image_hashes"
+        ).fetchone()[0]
+        if existing_hashes == 0:
+            old_paths = conn.execute(
+                "SELECT DISTINCT image_path FROM violations "
+                "WHERE image_path IS NOT NULL AND image_path != ''"
+            ).fetchall()
+            historical_hashes = []
+            for (old_path,) in old_paths:
+                candidate = Path(old_path)
+                if not candidate.is_absolute():
+                    candidate = BASE_DIR / candidate
+                try:
+                    if candidate.is_file():
+                        historical_hashes.append((
+                            hashlib.sha256(candidate.read_bytes()).hexdigest(),
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        ))
+                except OSError:
+                    # A deleted historical image cannot be fingerprinted.
+                    continue
+            if historical_hashes:
+                conn.executemany(
+                    "INSERT OR IGNORE INTO processed_image_hashes "
+                    "(image_sha256, processed_at) VALUES (?, ?)",
+                    historical_hashes,
+                )
+
+        inserted = conn.execute(
+            """
+            INSERT OR IGNORE INTO processed_image_hashes
+                (image_sha256, processed_at)
+            VALUES (?, ?)
+            """,
+            (image_digest, datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+
+        if inserted.rowcount == 0:
+            conn.rollback()
+            return False
+
+        if records:
+            conn.executemany("""
+                INSERT INTO violations
+                (
+                    bike_id,
+                    violation_type,
+                    timestamp,
+                    image_path,
+                    number_plate
+                )
+                VALUES (?, ?, ?, ?, ?)
+            """, records)
 
         conn.commit()
+        return True
 
     finally:
         conn.close()
+
+
+def intersection_over_inner_area(inner_box, outer_box):
+
+    ix1, iy1, ix2, iy2 = inner_box
+    ox1, oy1, ox2, oy2 = outer_box
+
+    intersection_width = max(
+        0,
+        min(ix2, ox2) - max(ix1, ox1)
+    )
+    intersection_height = max(
+        0,
+        min(iy2, oy2) - max(iy1, oy1)
+    )
+
+    inner_area = max(1, ix2 - ix1) * max(1, iy2 - iy1)
+
+    return (
+        intersection_width * intersection_height
+    ) / inner_area
+
+
+def match_box_to_motorcycle(box, motorcycles, minimum_overlap=0.5):
+
+    matches = []
+
+    for motorcycle_index, motorcycle in enumerate(motorcycles, start=1):
+
+        overlap = intersection_over_inner_area(
+            box,
+            motorcycle["box"]
+        )
+
+        if overlap >= minimum_overlap:
+            matches.append((overlap, motorcycle_index))
+
+    matches.sort(reverse=True)
+
+    if not matches:
+        return None
+
+    # Leave overlapping, near-equal matches unassigned.
+    if (
+        len(matches) > 1
+        and matches[0][0] - matches[1][0] < 0.10
+    ):
+        return None
+
+    return matches[0][1]
+
+
+def match_head_to_motorcycle(head_box, persons, person_to_bike):
+
+    matches = []
+
+    for person_index, motorcycle_index in person_to_bike.items():
+
+        overlap = intersection_over_inner_area(
+            head_box,
+            persons[person_index]["box"]
+        )
+
+        if overlap >= 0.5:
+            matches.append((overlap, motorcycle_index))
+
+    matches.sort(reverse=True)
+
+    if not matches:
+        return None
+
+    if (
+        len(matches) > 1
+        and matches[0][1] != matches[1][1]
+        and matches[0][0] - matches[1][0] < 0.10
+    ):
+        return None
+
+    return matches[0][1]
 
 
 # ==========================================
@@ -123,6 +258,51 @@ def get_violations():
         conn.close()
 
 
+@app.route("/api/violations/<int:record_id>/review", methods=["PATCH"])
+def review_violation(record_id):
+    action = str((request.get_json(silent=True) or {}).get("action", "")).lower()
+    if action not in {"confirm", "dismiss"}:
+        return jsonify({"error": "Action must be 'confirm' or 'dismiss'."}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute(
+            "SELECT violation_type FROM violations WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        if row is None:
+            return jsonify({"error": "Violation record not found."}), 404
+
+        current_type = str(row[0] or "").strip().upper()
+        if "TRIPLE RIDING" not in current_type:
+            return jsonify({"error": "This record has no triple-riding review."}), 409
+        if "CONFIRMED" in current_type or "DISMISSED" in current_type:
+            return jsonify({"error": "This triple-riding alert was already reviewed."}), 409
+
+        if action == "confirm":
+            updated_type = (
+                "NO HELMET + TRIPLE RIDING CONFIRMED"
+                if "NO HELMET" in current_type
+                else "TRIPLE RIDING CONFIRMED"
+            )
+        else:
+            # Keep a separate no-helmet violation intact for combined legacy rows.
+            updated_type = (
+                "NO HELMET"
+                if "NO HELMET" in current_type
+                else "POSSIBLE TRIPLE RIDING DISMISSED"
+            )
+
+        conn.execute(
+            "UPDATE violations SET violation_type = ? WHERE id = ?",
+            (updated_type, record_id),
+        )
+        conn.commit()
+        return jsonify({"id": record_id, "violation_type": updated_type})
+    finally:
+        conn.close()
+
+
 # ==========================================
 # SERVE ANNOTATED IMAGES
 # ==========================================
@@ -163,7 +343,7 @@ def analyze_image():
 
     if extension not in [".jpg", ".jpeg", ".png"]:
         return jsonify({
-            "error": "Only JPG and PNG images are allowed"
+            "error": "Only JPG, PNG, and WebP images are allowed"
         }), 400
 
     # --------------------------------------
@@ -175,6 +355,7 @@ def analyze_image():
     file_path = UPLOAD_FOLDER / filename
 
     uploaded_file.save(str(file_path))
+    image_digest = hashlib.sha256(file_path.read_bytes()).hexdigest()
 
     original_image = cv2.imread(str(file_path))
 
@@ -192,6 +373,7 @@ def analyze_image():
     )
 
     database_records = []
+    helmet_violation_candidates = []
 
     # ======================================
     # 1. HELMET DETECTION
@@ -289,7 +471,12 @@ def analyze_image():
 
     object_results = object_model.predict(
         source=original_image,
-        conf=0.35,
+        # A lower threshold helps recover partially occluded riders in busy
+        # scenes. Keep rider-to-bike matching conservative below to reject
+        # the extra background-person detections this can introduce.
+        conf=0.20,
+        imgsz=768,
+        classes=[0, 3],  # COCO person and motorcycle classes only.
         verbose=False
     )
 
@@ -365,7 +552,38 @@ def analyze_image():
                 min(px2, bx2) - max(px1, bx1)
             )
 
+    bike_results = []
+    triple_riding_count = 0
+    person_to_bike = {}
+
+    # Score every person-bike pair first, then choose each person's best
+    # motorcycle. This avoids detector order assigning nearby pedestrians
+    # to the first bike in the list.
+    person_candidates = {}
+    for person_index, person in enumerate(persons):
+        px1, py1, px2, py2 = person["box"]
+        person_width = max(1, px2 - px1)
+        person_height = max(1, py2 - py1)
+        person_center_x = (px1 + px2) / 2
+        candidate_scores = []
+
+        for bike_index, motorcycle in enumerate(motorcycles, start=1):
+            bx1, by1, bx2, by2 = motorcycle["box"]
+            bike_width = max(1, bx2 - bx1)
+            bike_height = max(1, by2 - by1)
+            # The detector box often covers the scooter frame but clips a
+            # pillion rider's torso. Expand the bike ROI modestly while
+            # retaining a vertical gate to avoid nearby pedestrians.
+            roi_x1 = bx1 - bike_width * 0.20
+            roi_x2 = bx2 + bike_width * 0.20
+            roi_y1 = by1 - bike_height * 0.20
+            roi_y2 = by2 + bike_height * 0.12
+            roi_width = max(1.0, roi_x2 - roi_x1)
+            bike_center_x = (roi_x1 + roi_x2) / 2
+            overlap_x = max(0, min(px2, roi_x2) - max(px1, roi_x1))
             overlap_ratio = overlap_x / person_width
+            center_distance = abs(person_center_x - bike_center_x) / roi_width
+            bottom_offset = abs(py2 - by2) / bike_height
 
             horizontal_match = (
                 overlap_ratio >= 0.30
@@ -384,6 +602,7 @@ def analyze_image():
             size_match = (
                 person_height >= bike_height * 0.40
             )
+            candidate_scores.append((score, bike_index))
 
             is_associated = (
                 horizontal_match
@@ -406,8 +625,15 @@ def analyze_image():
             if is_associated:
                 associated_persons.append(person_index)
 
-        for person_index in associated_persons:
-            assigned_persons.add(person_index)
+    for person_index, bike_index in person_candidates.items():
+        person_to_bike[person_index] = bike_index
+
+    for bike_index, motorcycle in enumerate(motorcycles, start=1):
+        associated_persons = [
+            person_index
+            for person_index, assigned_bike in person_to_bike.items()
+            if assigned_bike == bike_index
+        ]
 
         person_count = len(associated_persons)
 
@@ -415,6 +641,9 @@ def analyze_image():
         is_triple_riding = person_count >= 3
 
         if is_triple_riding:
+            triple_riding_count += 1
+
+        if needs_review:
             triple_riding_count += 1
 
         status = (
@@ -437,7 +666,7 @@ def analyze_image():
         )
 
     # ======================================
-    # 4. DRAW MOTORCYCLE BOXES
+    # 5. DRAW MOTORCYCLE BOXES
     # ======================================
 
     for bike in bike_results:
@@ -479,7 +708,7 @@ def analyze_image():
         )
 
     # ======================================
-    # 5. DRAW PERSON BOXES
+    # 6. DRAW PERSON BOXES
     # ======================================
 
     for person in persons:
@@ -495,7 +724,47 @@ def analyze_image():
         )
 
     # ======================================
-    # 6. SAVE ANNOTATED IMAGE
+    # 7. DRAW NUMBER-PLATE BOXES
+    # ======================================
+
+    for plate in plate_results:
+
+        x1, y1, x2, y2 = plate["box"]
+        plate_number = plate["plate_number"]
+        plate_status = plate["status"]
+
+        color = (
+            (0, 165, 255)
+            if plate_status == "REVIEW_REQUIRED"
+            else (0, 0, 255)
+        )
+
+        cv2.rectangle(
+            annotated_image,
+            (x1, y1),
+            (x2, y2),
+            color,
+            2
+        )
+
+        label = (
+            plate_number
+            if plate_number
+            else plate_status.replace("_", " ")
+        )
+
+        cv2.putText(
+            annotated_image,
+            label,
+            (x1, max(20, y1 - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            color,
+            2
+        )
+
+    # ======================================
+    # 8. SAVE ANNOTATED IMAGE
     # ======================================
 
     annotated_filename = f"{image_id}_result.jpg"
@@ -519,12 +788,18 @@ def analyze_image():
     save_violations(database_records)
 
     # ======================================
-    # 8. RETURN RESULTS TO REACT
+    # 10. RETURN RESULTS TO REACT
     # ======================================
 
-    total_violations = (
-        helmet_violations
-        + triple_riding_count
+    confirmed_violations = helmet_violations
+    review_alerts = triple_riding_count
+    processing_time_seconds = round(
+        perf_counter() - analysis_started_at,
+        2
+    )
+
+    print(
+        f"Image analysis completed in {processing_time_seconds:.2f}s"
     )
 
     return jsonify({
@@ -545,9 +820,26 @@ def analyze_image():
 
         "persons_detected": len(persons),
 
+        "plates_detected": len(
+            plate_results
+        ),
+
+        "plate_results": plate_results,
+
         "bike_results": bike_results,
 
-        "total_violations": total_violations,
+        "confirmed_violations": confirmed_violations,
+
+        "review_alerts": review_alerts,
+
+        "duplicate_image": not records_saved,
+
+        "records_saved": len(database_records) if records_saved else 0,
+
+        # Keep the legacy field, now limited to confirmed violations.
+        "total_violations": confirmed_violations,
+
+        "processing_time_seconds": processing_time_seconds,
 
         "annotated_image_url": (
             f"/api/annotated/{annotated_filename}"
@@ -568,5 +860,6 @@ if __name__ == "__main__":
     app.run(
         host="127.0.0.1",
         port=5000,
-        debug=True
+        debug=True,
+        use_reloader=False
     )
