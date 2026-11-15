@@ -24,11 +24,11 @@ The SQLite database must live on persistent storage when deployed. If the hostin
 
 For a deployment where the frontend and backend use different origins, set `VITE_API_URL` to the public Flask API URL at frontend build time and set `CORS_ALLOWED_ORIGINS` to the frontend origin on Flask. The Flask development server can bind to the network with `FLASK_HOST=0.0.0.0`; use a production WSGI server for deployment.
 
-## Deploy with Render
+## Deploy with Render Free
 
-The repository includes a `render.yaml` Blueprint for a Singapore-region Flask API and a static frontend. Connect this repository to Render and create a Blueprint from the file. The API uses Gunicorn, CPU-only PyTorch, OpenCV headless, and a persistent disk mounted at `/var/data` for the SQLite database, uploads, and annotated results. The frontend build points at `https://trafficvision-api.onrender.com`; Flask allows the matching `https://trafficvision-web.onrender.com` origin. If Render assigns different service URLs, update `VITE_API_URL` on the static site and `CORS_ALLOWED_ORIGINS` on the API, then redeploy both.
+The repository includes a `render.yaml` Blueprint for a Flask API and a static frontend. Connect this repository to Render and create a Blueprint from the file. Both services are configured on free plans. The API uses Gunicorn and CPU-only PyTorch; the frontend builds from Vite. Set the API URL, CORS origin, and service names to match the URLs Render assigns if they differ from the defaults in the Blueprint.
 
-The API is configured for Render's `1c-2g` (1 CPU, 2 GB RAM) plan. This is a paid service; check current hosting and disk pricing before creating the Blueprint. Render static sites are free, while the API's persistent disk requires a paid web service. Do not use the free API plan for the full model stack or persistent violation history.
+Render Free web services have 512 MB RAM and spin down after 15 minutes without traffic. The first request after sleep can take about a minute. Free filesystems are temporary: the SQLite database, uploads, and annotated images may be lost when the service restarts, spins down, or redeploys. The YOLO and EasyOCR models may also exceed the free service's memory; confirm that model loading and image analysis succeed in the deployed logs before presenting this as a working hosted demo. See Render's current free-plan limits before deployment.
 
 ## Requirements
 

@@ -3,19 +3,15 @@ services:
     name: trafficvision-api
     runtime: python
     region: singapore
-    plan: 1c-2g
+    plan: free
     buildCommand: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt
     startCommand: gunicorn --chdir ai/scripts --workers 1 --threads 2 --timeout 180 --bind 0.0.0.0:$PORT flask_api:app
     healthCheckPath: /
-    disk:
-      name: trafficvision-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
       - key: TRAFFIC_DATA_DIR
-        value: /var/data
+        value: /tmp/trafficvision-data
       - key: FLASK_DEBUG
         value: "false"
       - key: CORS_ALLOWED_ORIGINS
