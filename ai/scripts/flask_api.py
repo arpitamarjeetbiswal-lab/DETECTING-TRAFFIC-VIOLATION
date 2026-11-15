@@ -69,11 +69,26 @@ print("OBJECT MODEL CLASSES:", object_model.names)
 # DATABASE HELPER
 # ==========================================
 
+def ensure_violations_table(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS violations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bike_id TEXT,
+            violation_type TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            image_path TEXT,
+            number_plate TEXT
+        )
+    """)
+
+
 def save_violations(records, image_digest):
 
     conn = sqlite3.connect(DB_PATH)
 
     try:
+        ensure_violations_table(conn)
+
         # An identical image should not create a second copy of the same
         # violation rows when someone uploads it repeatedly for testing.
         conn.execute("""
@@ -349,6 +364,7 @@ def get_violations():
     conn.row_factory = sqlite3.Row
 
     try:
+        ensure_violations_table(conn)
         rows = conn.execute("""
             SELECT
                 id,
@@ -456,6 +472,7 @@ def review_violation(record_id):
 
     conn = sqlite3.connect(DB_PATH)
     try:
+        ensure_violations_table(conn)
         row = conn.execute(
             "SELECT violation_type FROM violations WHERE id = ?",
             (record_id,),
