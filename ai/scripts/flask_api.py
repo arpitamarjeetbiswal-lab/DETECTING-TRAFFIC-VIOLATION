@@ -2,16 +2,20 @@ from uuid import uuid4
 from datetime import datetime
 from pathlib import Path
 import hashlib
+import gc
 import os
 import sqlite3
 from time import perf_counter
 
-from plate_ocr_service import detect_and_read_plates
+from plate_ocr_service import detect_and_read_plates, release_models
 
 import cv2
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from ultralytics import YOLO
+import torch
+
+torch.set_num_threads(1)
 
 
 # ==========================================
@@ -50,19 +54,10 @@ OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 app.config["MAX_CONTENT_LENGTH"] = 21 * 1024 * 1024
 
 
-# ==========================================
-# LOAD AI MODELS
-# ==========================================
-
+# Model weights are loaded only for their pipeline stage and released before
+# the next model is loaded. This reduces peak resident memory on free hosts.
 HELMET_MODEL_PATH = BASE_DIR / "ai" / "models" / "best.pt"
-
-helmet_model = YOLO(str(HELMET_MODEL_PATH))
-
-# General object detector: person and motorcycle.
-object_model = YOLO(str(BASE_DIR / "yolov8n.pt"))
-
-print("HELMET MODEL CLASSES:", helmet_model.names)
-print("OBJECT MODEL CLASSES:", object_model.names)
+OBJECT_MODEL_PATH = BASE_DIR / "yolov8n.pt"
 
 
 # ==========================================
@@ -587,6 +582,8 @@ def analyze_image():
     # 1. HELMET DETECTION
     # ======================================
 
+    helmet_model = YOLO(str(HELMET_MODEL_PATH))
+    helmet_class_names = helmet_model.names
     helmet_results = helmet_model.predict(
         source=original_image,
         conf=0.25,
@@ -605,7 +602,7 @@ def analyze_image():
             class_id = int(box.cls.item())
             confidence = float(box.conf.item())
 
-            class_name = helmet_model.names[class_id]
+            class_name = helmet_class_names[class_id]
 
             print(
                 class_name,
@@ -674,10 +671,15 @@ def analyze_image():
     print("Total helmet violations:", helmet_violations)
     print("=======================================\n")
 
+    del helmet_results, helmet_model
+    gc.collect()
+
     # ======================================
     # 2. MOTORCYCLE / PERSON DETECTION
     # ======================================
 
+    object_model = YOLO(str(OBJECT_MODEL_PATH))
+    object_class_names = object_model.names
     object_results = object_model.predict(
         source=original_image,
         # A lower threshold helps recover partially occluded riders in busy
@@ -697,7 +699,7 @@ def analyze_image():
         class_id = int(box.cls.item())
         confidence = float(box.conf.item())
 
-        class_name = object_model.names[class_id]
+        class_name = object_class_names[class_id]
 
         coordinates = tuple(
             map(int, box.xyxy[0].tolist())
@@ -717,6 +719,9 @@ def analyze_image():
     print("Motorcycles detected:", len(motorcycles))
     print("Persons detected:", len(persons))
 
+    del object_results, object_model
+    gc.collect()
+
     # Plate OCR is part of image analysis. Keep it isolated so a missing or
     # misconfigured OCR model does not abort helmet and rider analysis.
     plate_ocr_error = None
@@ -729,6 +734,9 @@ def analyze_image():
         plate_results = []
         plate_ocr_error = str(error)
         print("Plate OCR unavailable:", error)
+    finally:
+        release_models()
+        gc.collect()
 
     # ======================================
     # 3. TRIPLE-RIDING ASSOCIATION

@@ -120,11 +120,22 @@ function UploadMedia({
         }
       );
 
-      const data = await response.json();
+      const contentType = response.headers.get("content-type") || "";
+      let data;
+      if (contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const responseText = await response.text();
+        data = {
+          error: responseText.trim().startsWith("<")
+            ? `The AI service returned HTTP ${response.status}. Please retry shortly.`
+            : responseText,
+        };
+      }
 
       if (!response.ok) {
         throw new Error(
-          data.error || "Image analysis failed."
+          data.error || `Image analysis failed (HTTP ${response.status}).`
         );
       }
 
@@ -267,7 +278,7 @@ function UploadMedia({
 
       setError(
         err.message === "Failed to fetch"
-          ? "Cannot connect to Flask. Make sure the backend is running on port 5000."
+          ? "The hosted AI service stopped responding during analysis. Wait about a minute for it to restart, then retry."
           : err.message || "Something went wrong during analysis."
       );
 

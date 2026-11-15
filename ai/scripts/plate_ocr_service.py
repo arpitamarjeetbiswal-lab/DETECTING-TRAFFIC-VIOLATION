@@ -1,4 +1,5 @@
 from pathlib import Path
+import gc
 import os
 import re
 
@@ -42,6 +43,14 @@ PLATE_PATTERN = re.compile(
 
 _plate_model = None
 _ocr_reader = None
+
+
+def release_models():
+    """Release per-request plate/OCR weights after analysis completes."""
+    global _plate_model, _ocr_reader
+    _plate_model = None
+    _ocr_reader = None
+    gc.collect()
 
 
 def get_plate_model():
