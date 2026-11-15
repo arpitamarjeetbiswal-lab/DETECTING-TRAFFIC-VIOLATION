@@ -684,7 +684,7 @@ def analyze_image():
         # scenes. Keep rider-to-bike matching conservative below to reject
         # the extra background-person detections this can introduce.
         conf=0.20,
-        imgsz=768,
+        imgsz=640,
         classes=[0, 3],  # COCO person and motorcycle classes only.
         verbose=False
     )
