@@ -70,7 +70,11 @@ def get_ocr_reader():
         )
 
         try:
-            _ocr_reader = easyocr.Reader(["en"], gpu=use_gpu)
+            # The plate detector has already isolated the plate crop, so
+            # EasyOCR's separate scene-text detector is redundant here.
+            # Keeping only its recognizer avoids loading/downloading CRAFT,
+            # which is especially important on small free hosting instances.
+            _ocr_reader = easyocr.Reader(["en"], gpu=use_gpu, detector=False)
         except Exception as error:
             if not use_gpu:
                 raise
@@ -79,7 +83,7 @@ def get_ocr_reader():
                 "EasyOCR GPU initialization failed; falling back to CPU:",
                 error
             )
-            _ocr_reader = easyocr.Reader(["en"], gpu=False)
+            _ocr_reader = easyocr.Reader(["en"], gpu=False, detector=False)
 
     return _ocr_reader
 
@@ -123,11 +127,10 @@ def read_text_region(reader, image, allowlist):
         interpolation=cv2.INTER_CUBIC
     )
 
-    results = reader.readtext(
+    results = recognize_crop(
+        reader,
         enlarged,
         allowlist=allowlist,
-        detail=1,
-        paragraph=False,
     )
 
     if not results:
@@ -149,6 +152,19 @@ def read_text_region(reader, image, allowlist):
     return text, confidence
 
 
+def recognize_crop(reader, image, allowlist):
+    """Recognize one already-cropped plate/text region without text detection."""
+    height, width = image.shape[:2]
+    return reader.recognize(
+        image,
+        horizontal_list=[[0, width, 0, height]],
+        free_list=[],
+        allowlist=allowlist,
+        detail=1,
+        paragraph=False,
+    )
+
+
 def read_plate(crop):
 
     if crop is None or crop.size == 0:
@@ -159,11 +175,10 @@ def read_plate(crop):
 
     reader = get_ocr_reader()
 
-    results = reader.readtext(
+    results = recognize_crop(
+        reader,
         enlarged,
         allowlist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-        detail=1,
-        paragraph=False,
     )
 
     if results:
