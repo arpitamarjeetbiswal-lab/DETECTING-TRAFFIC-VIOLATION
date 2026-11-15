@@ -37,9 +37,12 @@ CORS(app, resources={
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
-DB_PATH = BASE_DIR / "ai" / "traffic_violations.db"
-UPLOAD_FOLDER = BASE_DIR / "ai" / "uploads"
-OUTPUT_FOLDER = BASE_DIR / "ai" / "outputs" / "annotated"
+DATA_DIR = Path(os.environ.get("TRAFFIC_DATA_DIR", str(BASE_DIR / "ai")))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+DB_PATH = DATA_DIR / "traffic_violations.db"
+UPLOAD_FOLDER = DATA_DIR / "uploads"
+OUTPUT_FOLDER = DATA_DIR / "annotated"
 
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
@@ -1107,6 +1110,6 @@ if __name__ == "__main__":
     app.run(
         host=os.environ.get("FLASK_HOST", "127.0.0.1"),
         port=int(os.environ.get("PORT", "5000")),
-        debug=True,
+        debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true",
         use_reloader=False
     )
