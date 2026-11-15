@@ -344,7 +344,8 @@ def home():
 
     return jsonify({
         "status": "running",
-        "message": "Traffic Violation API is working"
+        "message": "Traffic Violation API is working",
+        "deployment": os.environ.get("RENDER_GIT_COMMIT", "local"),
     })
 
 
@@ -582,6 +583,7 @@ def analyze_image():
     # 1. HELMET DETECTION
     # ======================================
 
+    print("Analysis stage: helmet model loading")
     helmet_model = YOLO(str(HELMET_MODEL_PATH))
     helmet_class_names = helmet_model.names
     helmet_results = helmet_model.predict(
@@ -673,11 +675,13 @@ def analyze_image():
 
     del helmet_results, helmet_model
     gc.collect()
+    print("Analysis stage: helmet model released")
 
     # ======================================
     # 2. MOTORCYCLE / PERSON DETECTION
     # ======================================
 
+    print("Analysis stage: vehicle/person model loading")
     object_model = YOLO(str(OBJECT_MODEL_PATH))
     object_class_names = object_model.names
     object_results = object_model.predict(
@@ -721,11 +725,13 @@ def analyze_image():
 
     del object_results, object_model
     gc.collect()
+    print("Analysis stage: vehicle/person model released")
 
     # Plate OCR is part of image analysis. Keep it isolated so a missing or
     # misconfigured OCR model does not abort helmet and rider analysis.
     plate_ocr_error = None
     try:
+        print("Analysis stage: plate detection and OCR")
         plate_results = detect_and_read_plates(
             original_image,
             motorcycle_boxes=[motorcycle["box"] for motorcycle in motorcycles],

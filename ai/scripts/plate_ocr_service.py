@@ -315,49 +315,20 @@ def detect_and_read_plates(image, motorcycle_boxes=None):
     if height == 0 or width == 0:
         raise ValueError("Empty image received.")
 
-    model = get_plate_model()
-
-    prediction = model.predict(
-        source=image, imgsz=640, conf=DETECTION_CONFIDENCE, verbose=False
-    )[0]
-
+    candidates = _detect_plate_crops(image, motorcycle_boxes, width, height)
     plate_results = []
 
-    if prediction.boxes is None:
-        return plate_results
-
-    for box in prediction.boxes:
-
-        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-
-        # Add a small margin around the detected plate
-        pad_x = int((x2 - x1) * 0.04)
-        pad_y = int((y2 - y1) * 0.04)
-
-        x1 = max(0, x1 - pad_x)
-        y1 = max(0, y1 - pad_y)
-        x2 = min(width, x2 + pad_x)
-        y2 = min(height, y2 + pad_y)
-
-        if x2 <= x1 or y2 <= y1:
-            continue
-
-        crop = image[y1:y2, x1:x2]
-
-        should_read = (
-            motorcycle_boxes is None
-            or plate_matches_motorcycle(
-                (x1, y1, x2, y2),
-                motorcycle_boxes
-            )
-        )
+    for candidate in candidates:
+        x1, y1, x2, y2 = candidate["box"]
+        crop = candidate["crop"]
+        should_read = candidate["should_read"]
 
         if should_read:
             plate_number, ocr_confidence = read_plate(crop)
         else:
             plate_number, ocr_confidence = "", None
 
-        detection_confidence = float(box.conf[0])
+        detection_confidence = candidate["confidence"]
 
         if not should_read:
             status = "OCR_SKIPPED_UNMATCHED"
@@ -386,3 +357,53 @@ def detect_and_read_plates(image, motorcycle_boxes=None):
         )
 
     return plate_results
+
+
+def _detect_plate_crops(image, motorcycle_boxes, width, height):
+    """Run plate YOLO, then release it before loading the OCR recognizer."""
+    global _plate_model
+
+    model = get_plate_model()
+    prediction = None
+    candidates = []
+    try:
+        prediction = model.predict(
+            source=image,
+            imgsz=640,
+            conf=DETECTION_CONFIDENCE,
+            verbose=False,
+        )[0]
+
+        if prediction.boxes is None:
+            return candidates
+
+        for box in prediction.boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+            pad_x = int((x2 - x1) * 0.04)
+            pad_y = int((y2 - y1) * 0.04)
+            x1 = max(0, x1 - pad_x)
+            y1 = max(0, y1 - pad_y)
+            x2 = min(width, x2 + pad_x)
+            y2 = min(height, y2 + pad_y)
+
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            plate_box = (x1, y1, x2, y2)
+            should_read = (
+                motorcycle_boxes is None
+                or plate_matches_motorcycle(plate_box, motorcycle_boxes)
+            )
+            candidates.append({
+                "box": [x1, y1, x2, y2],
+                "crop": image[y1:y2, x1:x2].copy(),
+                "confidence": float(box.conf[0]),
+                "should_read": should_read,
+            })
+
+        return candidates
+    finally:
+        prediction = None
+        model = None
+        _plate_model = None
+        gc.collect()
