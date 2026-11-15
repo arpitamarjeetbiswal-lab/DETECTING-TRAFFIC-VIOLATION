@@ -3,8 +3,10 @@ from datetime import datetime
 from pathlib import Path
 import hashlib
 import gc
+from functools import wraps
 import os
 import sqlite3
+from threading import Lock
 from time import perf_counter
 
 from plate_ocr_service import detect_and_read_plates, release_models
@@ -23,6 +25,7 @@ torch.set_num_threads(1)
 # ==========================================
 
 app = Flask(__name__)
+analysis_lock = Lock()
 
 allowed_origins = [
     origin.strip()
@@ -523,7 +526,25 @@ def get_annotated_image(filename):
 # ANALYZE UPLOADED IMAGE
 # ==========================================
 
+def serialize_analysis_request(handler):
+    """Allow one memory-heavy image analysis at a time."""
+    @wraps(handler)
+    def wrapped(*args, **kwargs):
+        if not analysis_lock.acquire(blocking=False):
+            return jsonify({
+                "error": "Another image is being analyzed. Please wait and retry."
+            }), 429
+
+        try:
+            return handler(*args, **kwargs)
+        finally:
+            analysis_lock.release()
+
+    return wrapped
+
+
 @app.route("/api/analyze", methods=["POST"])
+@serialize_analysis_request
 def analyze_image():
     analysis_started_at = perf_counter()
 
