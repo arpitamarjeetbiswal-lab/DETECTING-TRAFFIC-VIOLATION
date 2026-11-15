@@ -23,6 +23,7 @@ MODEL_PATH = (
     / "weights"
     / "best.pt"
 )
+OCR_MODEL_DIR = BASE_DIR / "ai" / "models" / "easyocr"
 
 
 # =====================================================
@@ -46,7 +47,7 @@ _ocr_reader = None
 
 
 def release_models():
-    """Release per-request plate/OCR weights after analysis completes."""
+    """Release per-request plate/OCR weights to limit Render memory use."""
     global _plate_model, _ocr_reader
     _plate_model = None
     _ocr_reader = None
@@ -83,7 +84,12 @@ def get_ocr_reader():
             # EasyOCR's separate scene-text detector is redundant here.
             # Keeping only its recognizer avoids loading/downloading CRAFT,
             # which is especially important on small free hosting instances.
-            _ocr_reader = easyocr.Reader(["en"], gpu=use_gpu, detector=False)
+            _ocr_reader = easyocr.Reader(
+                ["en"],
+                gpu=use_gpu,
+                detector=False,
+                model_storage_directory=str(OCR_MODEL_DIR),
+            )
         except Exception as error:
             if not use_gpu:
                 raise
@@ -92,7 +98,12 @@ def get_ocr_reader():
                 "EasyOCR GPU initialization failed; falling back to CPU:",
                 error
             )
-            _ocr_reader = easyocr.Reader(["en"], gpu=False, detector=False)
+            _ocr_reader = easyocr.Reader(
+                ["en"],
+                gpu=False,
+                detector=False,
+                model_storage_directory=str(OCR_MODEL_DIR),
+            )
 
     return _ocr_reader
 

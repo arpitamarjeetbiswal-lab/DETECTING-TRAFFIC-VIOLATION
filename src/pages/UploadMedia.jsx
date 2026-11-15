@@ -278,7 +278,7 @@ function UploadMedia({
 
       setError(
         err.message === "Failed to fetch"
-          ? "The hosted AI service stopped responding during analysis. Wait about a minute for it to restart, then retry."
+          ? "The browser lost its connection to the AI API. Check the API service status and logs; if it restarted, wait until it is live before retrying."
           : err.message || "Something went wrong during analysis."
       );
 

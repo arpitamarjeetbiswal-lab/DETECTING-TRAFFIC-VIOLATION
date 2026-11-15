@@ -12,7 +12,8 @@ from time import perf_counter
 from plate_ocr_service import detect_and_read_plates, release_models
 
 import cv2
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, g, jsonify, request, send_from_directory
+from werkzeug.exceptions import HTTPException
 from flask_cors import CORS
 from ultralytics import YOLO
 import torch
@@ -531,12 +532,23 @@ def serialize_analysis_request(handler):
     @wraps(handler)
     def wrapped(*args, **kwargs):
         if not analysis_lock.acquire(blocking=False):
+            print("Analysis request rejected: another analysis is active", flush=True)
             return jsonify({
                 "error": "Another image is being analyzed. Please wait and retry."
             }), 429
 
+        request_id = uuid4().hex[:10]
+        g.analysis_request_id = request_id
+        print(f"Analysis request {request_id}: started", flush=True)
         try:
             return handler(*args, **kwargs)
+        except HTTPException as error:
+            return jsonify({"error": error.description}), error.code
+        except Exception:
+            app.logger.exception("Analysis request %s failed", request_id)
+            return jsonify({
+                "error": "Image analysis failed inside the API. Check the API logs for the request failure details."
+            }), 500
         finally:
             analysis_lock.release()
 
@@ -547,6 +559,7 @@ def serialize_analysis_request(handler):
 @serialize_analysis_request
 def analyze_image():
     analysis_started_at = perf_counter()
+    request_id = g.analysis_request_id
 
     # --------------------------------------
     # CHECK UPLOADED FILE
@@ -604,7 +617,7 @@ def analyze_image():
     # 1. HELMET DETECTION
     # ======================================
 
-    print("Analysis stage: helmet model loading")
+    print(f"Analysis request {request_id}: helmet model loading", flush=True)
     helmet_model = YOLO(str(HELMET_MODEL_PATH))
     helmet_class_names = helmet_model.names
     helmet_results = helmet_model.predict(
@@ -696,13 +709,13 @@ def analyze_image():
 
     del helmet_results, helmet_model
     gc.collect()
-    print("Analysis stage: helmet model released")
+    print(f"Analysis request {request_id}: helmet model released", flush=True)
 
     # ======================================
     # 2. MOTORCYCLE / PERSON DETECTION
     # ======================================
 
-    print("Analysis stage: vehicle/person model loading")
+    print(f"Analysis request {request_id}: vehicle/person model loading", flush=True)
     object_model = YOLO(str(OBJECT_MODEL_PATH))
     object_class_names = object_model.names
     object_results = object_model.predict(
@@ -746,13 +759,13 @@ def analyze_image():
 
     del object_results, object_model
     gc.collect()
-    print("Analysis stage: vehicle/person model released")
+    print(f"Analysis request {request_id}: vehicle/person model released", flush=True)
 
     # Plate OCR is part of image analysis. Keep it isolated so a missing or
     # misconfigured OCR model does not abort helmet and rider analysis.
     plate_ocr_error = None
     try:
-        print("Analysis stage: plate detection and OCR")
+        print(f"Analysis request {request_id}: plate detection and OCR", flush=True)
         plate_results = detect_and_read_plates(
             original_image,
             motorcycle_boxes=[motorcycle["box"] for motorcycle in motorcycles],
@@ -760,7 +773,7 @@ def analyze_image():
     except Exception as error:
         plate_results = []
         plate_ocr_error = str(error)
-        print("Plate OCR unavailable:", error)
+        print(f"Analysis request {request_id}: plate OCR unavailable: {error}", flush=True)
     finally:
         release_models()
         gc.collect()
@@ -1097,7 +1110,9 @@ def analyze_image():
         history_conn.close()
 
     print(
-        f"Image analysis completed in {processing_time_seconds:.2f}s"
+        f"Analysis request {request_id}: completed in "
+        f"{processing_time_seconds:.2f}s",
+        flush=True,
     )
 
     return jsonify({
