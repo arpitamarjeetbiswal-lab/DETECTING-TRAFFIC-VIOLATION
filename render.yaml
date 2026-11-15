@@ -24,4 +24,4 @@ services:
     staticPublishPath: ./dist
     envVars:
       - key: VITE_API_URL
-        value: https://trafficvision-api.onrender.com
+        value: https://trafficvision-api-6uh1.onrender.com
